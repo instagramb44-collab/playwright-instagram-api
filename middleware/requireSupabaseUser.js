@@ -18,7 +18,8 @@ async function requireSupabaseUser(req, res, next) {
       headers: {
         apikey: SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${match[1]}`
-      }
+      },
+      signal: AbortSignal.timeout(10000)
     });
 
     if (!response.ok) {
@@ -31,7 +32,7 @@ async function requireSupabaseUser(req, res, next) {
     }
 
     req.user = { id: user.id, email: user.email || null };
-    next();
+    return next();
   } catch (error) {
     console.error("Supabase token verification failed:", error.message);
     return res.status(503).json({ error: "Authentication service is temporarily unavailable." });
