@@ -23,7 +23,7 @@ function makeFakeBrowser() {
     }
   };
   const context = {
-    newPage: async () => page,
+    newPage: async () => page,\n    route: async () => {},
     cookies: async () => fakeState.cookies,
     storageState: async () => ({ cookies: fakeState.cookies, origins: [] })
   };
