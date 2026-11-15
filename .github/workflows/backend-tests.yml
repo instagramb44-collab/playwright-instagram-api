@@ -18,4 +18,6 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+        env:
+          SKIP_PLAYWRIGHT_BROWSER_INSTALL: '1'
       - run: npm test
