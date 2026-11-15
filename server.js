@@ -51,7 +51,7 @@ function validateReelUrl(input) {
       return null;
     }
 
-    const match = url.pathname.match(/^\\/(?:reel|reels)\\/([A-Za-z0-9_-]+)\\/?$/);
+    const match = url.pathname.match(/^\/(?:reel|reels)\/([A-Za-z0-9_-]+)\/?$/);
     if (!match) return null;
 
     return {
