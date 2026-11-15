@@ -147,6 +147,13 @@ async function closeSession(sessionId) {
   await session.browser.close();
 }
 
+async function closeOwnedSession(sessionId, userId) {
+  const session = getOwnedSession(sessionId, userId);
+  if (!session) return false;
+  await closeSession(sessionId);
+  return true;
+}
+
 async function closeUserSessions(userId) {
   const ownedIds = [...sessions.entries()]
     .filter(([, session]) => session.userId === userId)
