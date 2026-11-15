@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore
     branch: feature/supabase-instagram-sessions
-    buildCommand: npm ci
+    buildCommand: npm ci && npx playwright install --with-deps chromium
     startCommand: npm start
     healthCheckPath: /health
     envVars:
