@@ -1,6 +1,7 @@
 const express = require("express");
 const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
+const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -8,39 +9,6 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: "1mb" }));
 
 const jobs = new Map();
-
-function supabaseConfig() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
-  if (!url || !key) {
-    const error = new Error("Supabase backend configuration is missing.");
-    error.status = 503;
-    throw error;
-  }
-  return { url: url.replace(/\/$/, ""), key };
-}
-
-async function supabaseRequest(path, options = {}) {
-  const { url, key } = supabaseConfig();
-  const response = await fetch(`${url}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    }
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error("Supabase database request failed:", response.status, detail);
-    const error = new Error("Could not update Instagram connection data.");
-    error.status = 502;
-    throw error;
-  }
-  return response.status === 204 ? null : response.json();
-}
 
 function validateReelUrl(input) {
   try {
@@ -69,10 +37,7 @@ app.get("/health", (req, res) => {
 // Instagram connection status is scoped to the verified Supabase user.
 app.get("/api/instagram/connection", requireSupabaseUser, async (req, res, next) => {
   try {
-    const rows = await supabaseRequest(
-      `instagram_connections?select=status,connected_at,updated_at&user_id=eq.${encodeURIComponent(req.user.id)}&limit=1`
-    );
-    const connection = rows[0] || null;
+    const connection = await getConnectionStatus(req.user.id);
     res.json({
       status: connection?.status || "disconnected",
       connectedAt: connection?.connected_at || null,
@@ -83,13 +48,9 @@ app.get("/api/instagram/connection", requireSupabaseUser, async (req, res, next)
   }
 });
 
-// Disconnect removes the saved encrypted state. No browser cookies or tokens are returned.
 app.delete("/api/instagram/connection", requireSupabaseUser, async (req, res, next) => {
   try {
-    await supabaseRequest(
-      `instagram_connections?user_id=eq.${encodeURIComponent(req.user.id)}`,
-      { method: "DELETE" }
-    );
+    await disconnect(req.user.id);
     res.json({ status: "disconnected" });
   } catch (error) {
     next(error);
