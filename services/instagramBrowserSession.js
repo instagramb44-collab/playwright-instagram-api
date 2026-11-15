@@ -4,7 +4,7 @@ const { saveStorageState } = require("./instagramConnectionStore");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const VIEWPORT = { width: 1280, height: 800 };
-const MAX_ACTIVE_SESSIONS = 2;
+const MAX_ACTIVE_SESSIONS = 1;
 const sessions = new Map();
 
 const expirySweep = setInterval(() => {
