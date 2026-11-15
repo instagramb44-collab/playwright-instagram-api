@@ -2,6 +2,13 @@ const express = require("express");
 const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
+const {
+  startLoginSession,
+  getFrame,
+  sendInput,
+  completeLoginSession,
+  closeUserSessions
+} = require("./services/instagramBrowserSession");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
