@@ -35,9 +35,9 @@ function makeFakeBrowser() {
   return { browser, page, context };
 }
 
-const fake = makeFakeBrowser();
+let fake;
 Module._load = function (request, parent, isMain) {
-  if (request === "playwright") return { chromium: { launch: async () => fake.browser } };
+  if (request === "playwright") return { chromium: { launch: async () => { fake = makeFakeBrowser(); return fake.browser; } } };
   if (request === "./instagramConnectionStore" &&
       parent?.filename?.endsWith("instagramBrowserSession.js")) {
     return {
