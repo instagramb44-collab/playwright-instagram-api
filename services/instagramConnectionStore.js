@@ -16,7 +16,8 @@ async function request(path, options = {}) {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
       ...(options.headers || {})
-    }
+    },
+    signal: AbortSignal.timeout(10000)
   });
 
   if (!response.ok) {
