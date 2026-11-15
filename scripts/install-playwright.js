@@ -6,7 +6,7 @@ if (process.env.SKIP_PLAYWRIGHT_BROWSER_INSTALL === "1") {
 }
 
 const command = process.platform === "win32" ? "npx.cmd" : "npx";
-const result = spawnSync(command, ["playwright", "install", "--with-deps", "chromium"], {
+const result = spawnSync(command, ["playwright", "install", "chromium"], {
   stdio: "inherit"
 });
 
