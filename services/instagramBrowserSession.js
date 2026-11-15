@@ -167,5 +167,6 @@ module.exports = {
   sendInput,
   completeLoginSession,
   closeUserSessions,
+  closeOwnedSession,
   closeSession
 };
