@@ -50,6 +50,19 @@ async function startLoginSession(userId) {
       deviceScaleFactor: 1,
       locale: "en-US"
     });
+    // Restrict top-level navigation to Instagram so this is not a general
+    // remote browser. Subresources remain available for the login page.
+    await context.route("**/*", async route => {
+      const request = route.request();
+      if (request.isNavigationRequest() && request.frame().parentFrame() === null) {
+        const hostname = new URL(request.url()).hostname.toLowerCase();
+        if (hostname !== "instagram.com" && !hostname.endsWith(".instagram.com")) {
+          return route.abort();
+        }
+      }
+      return route.continue();
+    });
+
     const page = await context.newPage();
     const sessionId = randomUUID();
 
