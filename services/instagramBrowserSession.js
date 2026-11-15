@@ -3,8 +3,19 @@ const { chromium } = require("playwright");
 const { saveStorageState } = require("./instagramConnectionStore");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
-const VIEWPORT = { width: 1280, height: 800 };\nconst MAX_ACTIVE_SESSIONS = 2;
-const sessions = new Map();\n\nconst expirySweep = setInterval(() => {\n  const now = Date.now();\n  for (const [id, session] of sessions) {\n    if (now - session.createdAt > SESSION_TTL_MS) {\n      closeSession(id).catch(() => {});\n    }\n  }\n}, 60 * 1000);\nexpirySweep.unref();
+const VIEWPORT = { width: 1280, height: 800 };
+const MAX_ACTIVE_SESSIONS = 2;
+const sessions = new Map();
+
+const expirySweep = setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of sessions) {
+    if (now - session.createdAt > SESSION_TTL_MS) {
+      closeSession(id).catch(() => {});
+    }
+  }
+}, 60 * 1000);
+expirySweep.unref();
 
 function getOwnedSession(sessionId, userId) {
   const session = sessions.get(sessionId);
@@ -22,7 +33,13 @@ async function startLoginSession(userId) {
     if (session.userId === userId) await closeSession(id);
   }
 
-  if (sessions.size >= MAX_ACTIVE_SESSIONS) {\n    const error = new Error("All interactive browser slots are currently in use. Please try again shortly.");\n    error.status = 429;\n    throw error;\n  }\n\n  const browser = await chromium.launch({
+  if (sessions.size >= MAX_ACTIVE_SESSIONS) {
+    const error = new Error("All interactive browser slots are currently in use. Please try again shortly.");
+    error.status = 429;
+    throw error;
+  }
+
+  const browser = await chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"]
   });
