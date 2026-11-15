@@ -4,7 +4,7 @@ const { saveStorageState } = require("./instagramConnectionStore");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const VIEWPORT = { width: 1280, height: 800 };
-const sessions = new Map();
+const sessions = new Map();\n\nconst expirySweep = setInterval(() => {\n  const now = Date.now();\n  for (const [id, session] of sessions) {\n    if (now - session.createdAt > SESSION_TTL_MS) {\n      closeSession(id).catch(() => {});\n    }\n  }\n}, 60 * 1000);\nexpirySweep.unref();
 
 function getOwnedSession(sessionId, userId) {
   const session = sessions.get(sessionId);
