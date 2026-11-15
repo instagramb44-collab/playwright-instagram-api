@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGINS = new Set([
   "https://reeldata-platform65.vercel.app",
+  "https://reeldata-platform-9ug5.vercel.app",
   "http://localhost:5173"
 ]);
 
@@ -50,7 +51,7 @@ function validateReelUrl(input) {
       return null;
     }
 
-    const match = url.pathname.match(/^\/(?:reel|reels)\/([A-Za-z0-9_-]+)\/?$/);
+    const match = url.pathname.match(/^\\/(?:reel|reels)\\/([A-Za-z0-9_-]+)\\/?$/);
     if (!match) return null;
 
     return {
