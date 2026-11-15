@@ -6,6 +6,30 @@ const { getConnectionStatus, disconnect } = require("./services/instagramConnect
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const ALLOWED_ORIGINS = new Set([
+  "https://reeldata-platform65.vercel.app",
+  "http://localhost:5173"
+]);
+
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  }
+
+  if (req.method === "OPTIONS") {
+    if (origin && !ALLOWED_ORIGINS.has(origin)) {
+      return res.sendStatus(403);
+    }
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
+
 app.use(express.json({ limit: "1mb" }));
 
 const jobs = new Map();
@@ -18,7 +42,7 @@ function validateReelUrl(input) {
       return null;
     }
 
-    const match = url.pathname.match(/^\/(?:reel|reels)\/([A-Za-z0-9_-]+)\/?$/);
+    const match = url.pathname.match(/^\\/(?:reel|reels)\\/([A-Za-z0-9_-]+)\\/?$/);
     if (!match) return null;
 
     return {
