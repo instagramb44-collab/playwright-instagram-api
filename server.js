@@ -2,6 +2,14 @@ const express = require("express");
 const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
+const {
+  startLoginSession,
+  getFrame,
+  sendInput,
+  completeLoginSession,
+  closeUserSessions,
+  closeOwnedSession
+} = require("./services/instagramBrowserSession");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -72,8 +80,63 @@ app.get("/api/instagram/connection", requireSupabaseUser, async (req, res, next)
   }
 });
 
+// Start a short-lived, user-owned remote browser for manual Instagram login.
+app.post("/api/instagram/login/session", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const session = await startLoginSession(req.user.id);
+    res.status(201).json(session);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/instagram/login/session/:sessionId/frame", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const frame = await getFrame(req.params.sessionId, req.user.id);
+    if (!frame) return res.status(404).json({ error: "Browser session expired or not found." });
+    res.setHeader("Cache-Control", "no-store");
+    res.type("jpeg").send(frame);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/instagram/login/session/:sessionId/input", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const accepted = await sendInput(req.params.sessionId, req.user.id, req.body || {});
+    if (!accepted) return res.status(404).json({ error: "Browser session expired or not found." });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ accepted: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/instagram/login/session/:sessionId/complete", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const connected = await completeLoginSession(req.params.sessionId, req.user.id);
+    if (!connected) {
+      return res.status(409).json({ error: "Instagram login is not complete yet. Finish logging in inside the browser." });
+    }
+    res.json({ status: "connected" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/instagram/login/session/:sessionId", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const closed = await closeOwnedSession(req.params.sessionId, req.user.id);
+    if (!closed) return res.status(404).json({ error: "Browser session expired or not found." });
+    res.json({ status: "closed" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete("/api/instagram/connection", requireSupabaseUser, async (req, res, next) => {
   try {
+    await closeUserSessions(req.user.id);
     await disconnect(req.user.id);
     res.json({ status: "disconnected" });
   } catch (error) {

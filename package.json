@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "node --test",
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "node scripts/install-playwright.js"
   },
   "repository": {
     "type": "git",
