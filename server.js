@@ -51,7 +51,8 @@ function validateReelUrl(input) {
   try {
     const url = new URL(input.trim());
 
-    if (!["instagram.com", "www.instagram.com"].includes(url.hostname)) {
+    if (url.protocol !== "https:" || url.username || url.password || url.port ||
+        !["instagram.com", "www.instagram.com"].includes(url.hostname.toLowerCase())) {
       return null;
     }
 
