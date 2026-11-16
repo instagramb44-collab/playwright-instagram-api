@@ -143,6 +143,57 @@ async function finishJob(jobId, userId, total, completed, failed) {
   });
 }
 
+async function getJob(jobId, userId) {
+  const rows = await request(
+    `scraper_jobs?select=id,user_id,platform_id,job_type,status,total_items,completed_items,failed_items,request_metadata,error_message,created_at,started_at,completed_at&id=eq.${encode(jobId)}&user_id=eq.${encode(userId)}&limit=1`
+  );
+  return rows?.[0] || null;
+}
+
+async function getJobResults(jobId, userId) {
+  const items = await request(
+    `scraper_job_items?select=id,job_id,input_url,normalized_url,status,error_message,created_at,processed_at&job_id=eq.${encode(jobId)}&user_id=eq.${encode(userId)}&order=created_at.asc`
+  );
+  if (!items?.length) return [];
+
+  const ids = items.map(item => item.id);
+  const inFilter = ids.map(encode).join(",");
+  const records = await request(
+    `scraper_results?select=id,job_item_id,content_type,source_url,canonical_url,platform_content_id,username,profile_name,published_at,metrics,extracted_data,scraped_at&user_id=eq.${encode(userId)}&job_item_id=in.(${inFilter})`
+  );
+  const byItem = new Map((records || []).map(record => [record.job_item_id, record]));
+
+  return items.map(item => {
+    const record = byItem.get(item.id);
+    if (!record) {
+      return {
+        id: item.id,
+        reelUrl: item.normalized_url,
+        creator: null,
+        username: null,
+        profileName: null,
+        profileUrl: null,
+        status: item.status,
+        error: item.error_message || null
+      };
+    }
+    const creator = {
+      username: record.username,
+      profileName: record.profile_name,
+      profileUrl: record.extracted_data?.profile_url || null
+    };
+    return {
+      id: item.id,
+      reelUrl: record.canonical_url || record.source_url,
+      creator,
+      ...creator,
+      status: item.status,
+      metrics: record.metrics,
+      scrapedAt: record.scraped_at
+    };
+  });
+}
+
 async function listWorkspace(userId) {
   const filter = `user_id=eq.${encode(userId)}`;
   const [jobs, items, results] = await Promise.all([
@@ -153,4 +204,4 @@ async function listWorkspace(userId) {
   return { jobs: jobs || [], items: items || [], results: results || [] };
 }
 
-module.exports = { createJob, createItem, saveResult, finishItem, finishJob, listWorkspace };
+module.exports = { createJob, createItem, saveResult, finishItem, finishJob, getJob, getJobResults, listWorkspace };
