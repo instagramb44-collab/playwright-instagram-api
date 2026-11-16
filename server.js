@@ -195,8 +195,9 @@ app.post("/api/instagram/reel/profile", requireSupabaseUser, async (req, res, ne
   }
 });
 
-// Job APIs now require a verified user and keep jobs isolated in this process.
-app.post("/api/jobs", requireSupabaseUser, (req, res) => {
+// Find Creator runs each lookup synchronously and returns final results only.
+// Lookups are sequential because the Render service has one shared Chromium slot.
+app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
   const { urls } = req.body || {};
 
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -206,33 +207,62 @@ app.post("/api/jobs", requireSupabaseUser, (req, res) => {
     return res.status(400).json({ error: "Maximum 100 Reel URLs allowed per batch." });
   }
 
-  const results = urls.map((input) => {
+  const results = [];
+  for (const input of urls) {
+    const id = randomUUID();
     const parsed = typeof input === "string" ? validateReelUrl(input) : null;
-    return {
-      id: randomUUID(),
-      reelUrl: parsed ? parsed.normalizedUrl : String(input),
-      shortcode: parsed?.shortcode || null,
-      username: null,
-      status: parsed ? "Queued" : "Failed",
-      errorMessage: parsed ? null : "Invalid Instagram Reel URL"
-    };
-  });
+    const reelUrl = parsed ? parsed.normalizedUrl : String(input);
 
-  const jobId = randomUUID();
-  const job = {
-    id: jobId,
-    userId: req.user.id,
-    totalUrls: results.length,
-    completed: 0,
-    pending: results.filter(item => item.status === "Queued").length,
-    failed: results.filter(item => item.status === "Failed").length,
-    status: "Queued",
-    createdAt: new Date().toISOString(),
+    if (!parsed) {
+      results.push({
+        id,
+        reelUrl,
+        creator: null,
+        username: null,
+        profileName: null,
+        profileUrl: null,
+        error: "Unable to find creator. Please try again."
+      });
+      continue;
+    }
+
+    try {
+      const creator = await lookupReelCreator(req.user.id, parsed.normalizedUrl);
+      const safeCreator = {
+        username: creator.username,
+        profileName: creator.profileName || null,
+        profileUrl: creator.profileUrl || `https://www.instagram.com/${creator.username}/`
+      };
+      results.push({
+        id,
+        reelUrl,
+        creator: safeCreator,
+        ...safeCreator
+      });
+    } catch (error) {
+      console.warn("[Find Creator] lookup failed", {
+        userId: req.user.id,
+        shortcode: parsed.shortcode,
+        status: Number.isInteger(error.status) ? error.status : 502,
+        code: error.code || "CREATOR_LOOKUP_FAILED"
+      });
+      results.push({
+        id,
+        reelUrl,
+        creator: null,
+        username: null,
+        profileName: null,
+        profileUrl: null,
+        error: "Unable to find creator. Please try again."
+      });
+    }
+  }
+
+  return res.status(200).json({
+    jobId: randomUUID(),
+    total: results.length,
     results
-  };
-
-  jobs.set(jobId, job);
-  res.status(201).json({ message: "Import job created successfully.", job: { ...job, userId: undefined } });
+  });
 });
 
 app.get("/api/jobs/:jobId", requireSupabaseUser, (req, res) => {
