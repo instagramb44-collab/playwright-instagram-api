@@ -71,7 +71,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
     let pathname;
     try { pathname = new URL(request.url, "http://localhost").pathname; } catch { socket.destroy(); return; }
     const match = pathname.match(/^\/ws\/instagram\/reel\/lookup\/([0-9a-f-]{36})$/i);
-    if (!match) return;
+    if (!match) { socket.destroy(); return; }
     const origin = request.headers.origin;
     if (!origin || !allowedOrigins.has(origin)) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
     wss.handleUpgrade(request, socket, head, ws => {
