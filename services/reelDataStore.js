@@ -130,17 +130,22 @@ async function finishJob(jobId, userId, total, completed, failed) {
       completed_at: new Date().toISOString()
     })
   });
-  await request("usage_records", {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({
-      user_id: userId,
-      job_id: jobId,
-      event_type: "scrape",
-      urls_submitted: total,
-      urls_processed: completed
-    })
-  });
+  try {
+    await request("usage_records", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        user_id: userId,
+        job_id: jobId,
+        event_type: "scrape",
+        urls_submitted: total,
+        urls_processed: completed
+      })
+    });
+  } catch (error) {
+    // Usage analytics must not turn a successfully persisted job into an API failure.
+    console.error("ReelData usage record could not be saved:", error.message);
+  }
 }
 
 async function getJob(jobId, userId) {
