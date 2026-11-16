@@ -2,6 +2,7 @@ const express = require("express");
 const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
+const { lookupReelCreator } = require("./services/instagramReelLookup");
 const {
   startLoginSession,
   getFrame,
@@ -145,6 +146,29 @@ app.delete("/api/instagram/connection", requireSupabaseUser, async (req, res, ne
   }
 });
 
+// Look up the creator of one Reel using the signed-in user's saved Instagram session.
+app.post("/api/instagram/reel/profile", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const input = req.body?.url;
+    const parsed = typeof input === "string" ? validateReelUrl(input) : null;
+    if (!parsed) {
+      return res.status(400).json({
+        error: "Please provide a valid Instagram Reel URL.",
+        code: "INVALID_REEL_URL"
+      });
+    }
+
+    const creator = await lookupReelCreator(req.user.id, parsed.normalizedUrl);
+    return res.json({
+      reelUrl: parsed.normalizedUrl,
+      shortcode: parsed.shortcode,
+      creator
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // Job APIs now require a verified user and keep jobs isolated in this process.
 app.post("/api/jobs", requireSupabaseUser, (req, res) => {
   const { urls } = req.body || {};
@@ -205,7 +229,8 @@ app.get("/api/jobs/:jobId/results", requireSupabaseUser, (req, res) => {
 app.use((error, req, res, next) => {
   console.error("API error:", error.message);
   res.status(error.status || 500).json({
-    error: error.status ? error.message : "An unexpected server error occurred."
+    error: error.status ? error.message : "An unexpected server error occurred.",
+    ...(error.code ? { code: error.code } : {})
   });
 });
 
