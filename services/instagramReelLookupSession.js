@@ -137,7 +137,12 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
           if (route.request().isNavigationRequest() && route.request().frame().parentFrame() === null) {
             let host = "";
             try { host = new URL(route.request().url()).hostname.toLowerCase(); } catch {}
-            if (host !== "instagram.com" && !host.endsWith(".instagram.com")) return route.abort();
+            if (host !== "instagram.com" && !host.endsWith(".instagram.com")) {
+              let pathname = "/";
+              try { pathname = new URL(route.request().url()).pathname; } catch {}
+              console.warn("[Reel lookup] blocked external top-level navigation", { hostname: host || "unknown", pathname });
+              return route.abort();
+            }
           }
           return route.continue();
         });
@@ -151,10 +156,26 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
             console.info("[Reel lookup] navigation response", { hostname, status: response.status() });
           }
         });
+        page.on("framenavigated", frame => {
+          if (frame !== page.mainFrame()) return;
+          let destination = { hostname: "unknown", pathname: "/" };
+          try {
+            const parsed = new URL(frame.url());
+            destination = { hostname: parsed.hostname, pathname: parsed.pathname };
+          } catch {}
+          console.info("[Reel lookup] main frame navigated", destination);
+        });
+        page.on("close", () => console.warn("[Reel lookup] page closed during session"));
+        session.browser.on("disconnected", () => console.warn("[Reel lookup] Chromium disconnected"));
         page.on("requestfailed", request => {
           let hostname = "unknown";
-          try { hostname = new URL(request.url()).hostname; } catch {}
-          console.warn("[Reel lookup] browser request failed", { hostname, resourceType: request.resourceType(), failure: request.failure()?.errorText || "unknown" });
+          let pathname = "/";
+          try {
+            const parsed = new URL(request.url());
+            hostname = parsed.hostname;
+            pathname = parsed.pathname;
+          } catch {}
+          console.warn("[Reel lookup] browser request failed", { hostname, pathname, resourceType: request.resourceType(), failure: request.failure()?.errorText || "unknown" });
         });
         sendJson(socket, { type: "status", step: "loading_session", message: "Loading your saved Instagram connection..." });
         stage = "starting_browser_screencast";
@@ -169,7 +190,24 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
         });
         sendJson(socket, { type: "status", step: "navigating", message: "Opening the Instagram Reel..." });
         stage = "navigating_to_reel";
-        const response = await page.goto(session.reelUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+        let response = null;
+        try {
+          // Resolve the navigation at commit, then wait for the document lifecycle separately.
+          // Instagram can supersede an in-flight document navigation while initializing its page.
+          response = await page.goto(session.reelUrl, { waitUntil: "commit", timeout: 45000 });
+          await page.waitForLoadState("domcontentloaded", { timeout: 30000 });
+        } catch (navigationError) {
+          const message = String(navigationError?.message || "");
+          if (!message.includes("net::ERR_ABORTED") || page.isClosed()) throw navigationError;
+          console.warn("[Reel lookup] navigation was superseded; checking settled document", {
+            errorName: navigationError?.name || "Error"
+          });
+          await page.waitForLoadState("domcontentloaded", { timeout: 30000 });
+          const settled = new URL(page.url());
+          if (settled.hostname !== "instagram.com" && settled.hostname !== "www.instagram.com") {
+            throw navigationError;
+          }
+        }
         if (response?.status() === 429) {
           const error = new Error("Instagram is temporarily rate-limiting this request."); error.status = 429; throw error;
         }
