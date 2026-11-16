@@ -4,18 +4,22 @@ services:
     runtime: node
     plan: free
     region: singapore
-    branch: feature/supabase-instagram-sessions
+    branch: fix/creator-lookup-backend
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: "20"
-      - key: SUPABASE_URL
+      - key: APP_SUPABASE_URL
         sync: false
-      - key: SUPABASE_PUBLISHABLE_KEY
+      - key: APP_SUPABASE_PUBLISHABLE_KEY
         sync: false
-      - key: SUPABASE_SECRET_KEY
+      - key: APP_SUPABASE_SECRET_KEY
+        sync: false
+      - key: SESSION_SUPABASE_URL
+        sync: false
+      - key: SESSION_SUPABASE_SECRET_KEY
         sync: false
       - key: INSTAGRAM_SESSION_ENCRYPTION_KEY
         sync: false
