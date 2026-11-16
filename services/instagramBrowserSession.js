@@ -143,29 +143,29 @@ async function startLoginSession(userId) {
       timeout: 45000
     });
 
-    // Do not report a successful session until the actual login form is visible.
-    // This prevents the frontend from polling and displaying a blank browser frame.
-    try {
-      await page.locator('input[name="username"]').waitFor({
-        state: "visible",
-        timeout: 15000
-      });
-    } catch {
-      let finalHostname = "unknown";
-      let pageTitle = "unavailable";
-      try { finalHostname = new URL(page.url()).hostname; } catch {}
-      try { pageTitle = (await page.title()).slice(0, 100); } catch {}
-      console.error("[Instagram browser] login form readiness check failed", {
-        finalHostname,
-        pageTitle,
-        mainDocumentStatus
-      });
-      const error = new Error(
-        "Instagram's login form did not load. Please try again in a moment."
-      );
-      error.status = 502;
-      error.code = "INSTAGRAM_LOGIN_PAGE_NOT_READY";
-      throw error;
+    // Keep the short-lived browser session available even when the expected
+    // username input is not detected. The user can inspect the actual page
+    // through the existing remote frame, and diagnostics help identify layout
+    // or interstitial changes without logging page content or credentials.
+    let loginPageReady = true;
+    if (!await page.locator('input[name="username"]').isVisible().catch(() => false)) {
+      try {
+        await page.locator('input[name="username"]').waitFor({
+          state: "visible",
+          timeout: 15000
+        });
+      } catch {
+        loginPageReady = false;
+        let finalHostname = "unknown";
+        let pageTitle = "unavailable";
+        try { finalHostname = new URL(page.url()).hostname; } catch {}
+        try { pageTitle = (await page.title()).slice(0, 100); } catch {}
+        console.warn("[Instagram browser] login form not detected; keeping diagnostic session", {
+          finalHostname,
+          pageTitle,
+          mainDocumentStatus
+        });
+      }
     }
 
     sessions.set(sessionId, {
@@ -176,7 +176,11 @@ async function startLoginSession(userId) {
       createdAt: Date.now()
     });
 
-    return { sessionId, expiresInSeconds: SESSION_TTL_MS / 1000 };
+    return {
+      sessionId,
+      expiresInSeconds: SESSION_TTL_MS / 1000,
+      loginPageReady
+    };
   } catch (error) {
     if (browser) await browser.close().catch(() => {});
     throw error;
