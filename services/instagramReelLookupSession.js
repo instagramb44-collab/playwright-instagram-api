@@ -15,6 +15,7 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 function safeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
   const left = Buffer.from(a, "hex");
   const right = Buffer.from(b, "hex");
   return left.length === right.length && crypto.timingSafeEqual(left, right);
@@ -81,7 +82,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
 
   wss.on("connection", (socket, request, sessionId) => {
     const session = sessions.get(sessionId);
-    if (!session || session.closed || Date.now() > session.expiresAt) {
+    if (!session || session.closed || session.consumed || session.socket || Date.now() > session.expiresAt) {
       sendJson(socket, { type: "error", status: 404, message: "Reel lookup session expired." });
       socket.close(4404, "Session expired");
       return;
@@ -104,7 +105,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
       if (authenticated || isBinary) return finish(4401, "Unexpected message");
       let message;
       try { message = JSON.parse(raw.toString()); } catch { return finish(4401, "Invalid authentication"); }
-      if (message?.type !== "auth" || typeof message.viewerToken !== "string" ||
+      if (session.consumed || message?.type !== "auth" || typeof message.viewerToken !== "string" ||
           Date.now() > session.tokenExpiresAt ||
           !safeEqual(hashToken(message.viewerToken), session.tokenHash)) {
         sendJson(socket, { type: "error", status: 401, message: "Invalid or expired viewer token." });
@@ -143,7 +144,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
         await cdp.send("Page.startScreencast", { format: "jpeg", quality: 55, maxWidth: 1100, maxHeight: 720, everyNthFrame: 2 });
         cdp.on("Page.screencastFrame", async event => {
           try {
-            if (socket.readyState === 1) sendJson(socket, { type: "frame", data: event.data, mimeType: "image/jpeg" });
+            if (socket.readyState === 1) socket.send(Buffer.from(event.data, "base64"), { binary: true });
             await cdp.send("Page.screencastFrameAck", { sessionId: event.sessionId });
           } catch {}
         });
