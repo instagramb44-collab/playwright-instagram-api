@@ -1,35 +1,45 @@
 # ReelData backend environment
 
-Node.js 20 or newer is required.
+Node.js 20 or newer is required. Configure all variables below only in Render's server-side environment settings. Never commit real values or put secret keys in Vercel/browser code.
 
-Set these variables in the backend host's **server-side environment settings**. Never put secret values in the frontend or commit a real `.env` file.
+## Required Render variables
 
-Required:
-- `SUPABASE_URL`: ReelData Supabase project URL.
-- `SUPABASE_PUBLISHABLE_KEY`: publishable key used to verify user access tokens with Supabase Auth.
-- `SUPABASE_SECRET_KEY`: server-only secret key used by the backend to access the private Instagram connection row.
-- `INSTAGRAM_SESSION_ENCRYPTION_KEY`: base64-encoded 32-byte random key. Generate with:
+### Main application project — `reeldata-platform`
+- `APP_SUPABASE_URL` — `https://idsvtzsravxgxpotkfzc.supabase.co`
+- `APP_SUPABASE_PUBLISHABLE_KEY` — publishable key used with the user's Bearer access token to verify the signed-in account.
+- `APP_SUPABASE_SECRET_KEY` — server-only secret key used to save/read `public.creator_lookup_history`.
+
+### Instagram session project — `reeldata-sessions`
+- `SESSION_SUPABASE_URL` — `https://ssrzmdtdrmevydfioxba.supabase.co`
+- `SESSION_SUPABASE_SECRET_KEY` — server-only secret key used only for encrypted `public.instagram_connections` rows.
+
+### Encryption
+- `INSTAGRAM_SESSION_ENCRYPTION_KEY` — base64-encoded 32-byte random key. Generate once and keep the same value across deploys:
   `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
 
-Use the dedicated `reeldata-sessions` Supabase project, not the VitaAI project. Keep all keys on the backend host. Do not send the secret key or encryption key to Vercel/browser code.
+Do not use the session project's key for application data. Do not send either secret key or the encryption key to Vercel. The Vercel frontend should use only the main application's URL and publishable key.
+
+## Identity and data ownership
+
+The backend verifies the access token against `APP_SUPABASE_URL`. The verified platform Auth user UUID is used for Creator Lookup History and stored in `instagram_connections.app_user_id` in the separate sessions project.
+
+The legacy `instagram_connections.user_id` column and its sessions-project Auth foreign key are retained for existing rows. Existing legacy connections are not automatically mapped to platform users; users with only a legacy row may need to reconnect Instagram after this backend version is deployed. No encrypted session data is deleted by the schema migration.
 
 ## Authenticated API
 
-Send a Supabase access token as `Authorization: Bearer <access_token>`.
+Send the platform Supabase access token as `Authorization: Bearer <access_token>`.
 
-- `GET /api/instagram/connection` — returns the signed-in user's connection status and timestamps only.
-- `DELETE /api/instagram/connection` — deletes that user's encrypted Instagram session row.
-- `POST /api/jobs` — creates an in-memory Reel import job for the signed-in user.
-- `GET /api/jobs/:jobId` and `GET /api/jobs/:jobId/results` — only the job owner can read it.
+- `GET /api/creator-lookups/history` — reads the signed-in user's Creator Lookup History from the platform project.
+- `GET /api/instagram/connection` — returns the signed-in user's connection status.
+- `DELETE /api/instagram/connection` — deletes that user's encrypted session row.
+- `POST /api/jobs` — performs Creator Lookup and persists results to the platform project.
 
-The API verifies access tokens against Supabase Auth before using the user UUID. Job records remain in process memory, so they are lost on restart and are not yet suitable for multi-instance production deployment.
+The backend never trusts a user ID from request parameters or request bodies.
 
 ## Instagram session safety
 
-AES-256-GCM encryption/decryption helpers and a per-user Supabase storage service are in place. Browser state is never returned to the client. The interactive remote-browser login flow is intentionally not implemented yet. A future worker must create Playwright storage state server-side, then call the storage service to encrypt and persist it.
-
-Do not ask users to send Instagram passwords, cookies, or session files. Do not bypass CAPTCHA, login challenges, rate limits, or platform restrictions.
+Playwright storage state is encrypted using AES-256-GCM before it is stored in the sessions project. Browser state is never returned to the client. Do not ask users to send Instagram passwords, cookies, or session files. Do not bypass CAPTCHA, login challenges, rate limits, or platform restrictions.
 
 ## Verify locally
 
-Run `npm test` to test AES-GCM round-trip, unique IV generation, and tamper detection. Run `npm start` to start the API.
+Run `npm test` and `npm start`. Confirm Render has all six variables above before deploying this branch.
