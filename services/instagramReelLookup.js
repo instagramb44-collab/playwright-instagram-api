@@ -5,7 +5,7 @@ const NAVIGATION_TIMEOUT_MS = 45000;
 
 function extractUsernameFromDescription(description) {
   if (typeof description !== "string") return null;
-  const match = description.match(/\\s-\\s([A-Za-z0-9._]{1,30})\\s+on\\s/i);
+  const match = description.match(/\s-\s([A-Za-z0-9._]{1,30})\s+on\s/i);
   return match ? match[1] : null;
 }
 
@@ -66,7 +66,7 @@ async function extractCreator(page) {
 
     const description = document.querySelector('meta[property="og:description"]')
       ?.getAttribute("content") || "";
-    const match = description.match(/\\s-\\s([A-Za-z0-9._]{1,30})\\s+on\\s/i);
+    const match = description.match(/\s-\s([A-Za-z0-9._]{1,30})\s+on\s/i);
     return match ? match[1] : null;
   });
 
@@ -122,7 +122,7 @@ async function lookupReelCreator(userId, reelUrl) {
       error.code = "INSTAGRAM_UNEXPECTED_REDIRECT";
       throw error;
     }
-    if (/^\\/accounts\\/(login|challenge)/.test(currentUrl.pathname)) {
+    if (/^\/accounts\/(login|challenge)/.test(currentUrl.pathname)) {
       const error = new Error("Your Instagram connection needs attention. Reconnect your account and try again.");
       error.status = 409;
       error.code = "INSTAGRAM_REAUTH_REQUIRED";
