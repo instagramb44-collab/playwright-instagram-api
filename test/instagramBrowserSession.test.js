@@ -108,27 +108,24 @@ test("browser frames and inputs are restricted to the owning user", async () => 
   await sessions.closeOwnedSession(sessionId, "owner");
 });
 
-test("allows two different users to hold separate sessions at the same time", async () => {
+test("allows only one Chromium login session across users by default", async () => {
   const first = await sessions.startLoginSession("multi-user-1");
-  const second = await sessions.startLoginSession("multi-user-2");
-  assert.notEqual(first.sessionId, second.sessionId);
+  await assert.rejects(
+    sessions.startLoginSession("multi-user-2"),
+    error => error.status === 429 && error.code === "INSTAGRAM_BROWSER_CAPACITY"
+  );
   assert.equal(await sessions.getFrame(first.sessionId, "multi-user-1") instanceof Buffer, true);
-  assert.equal(await sessions.getFrame(second.sessionId, "multi-user-2") instanceof Buffer, true);
   await sessions.closeOwnedSession(first.sessionId, "multi-user-1");
-  await sessions.closeOwnedSession(second.sessionId, "multi-user-2");
 });
 
-test("enforces a safe global browser limit and does not evict another user", async () => {
+test("returns HTTP 429 when the shared browser slot is occupied", async () => {
   const first = await sessions.startLoginSession("capacity-user-1");
-  const second = await sessions.startLoginSession("capacity-user-2");
   await assert.rejects(
-    sessions.startLoginSession("capacity-user-3"),
+    sessions.startLoginSession("capacity-user-2"),
     error => error.status === 429 && error.code === "INSTAGRAM_BROWSER_CAPACITY"
   );
   assert.equal(await sessions.getFrame(first.sessionId, "capacity-user-1") instanceof Buffer, true);
-  assert.equal(await sessions.getFrame(second.sessionId, "capacity-user-2") instanceof Buffer, true);
   await sessions.closeOwnedSession(first.sessionId, "capacity-user-1");
-  await sessions.closeOwnedSession(second.sessionId, "capacity-user-2");
 });
 
 test("only saves storage state when an Instagram session cookie exists", async () => {
