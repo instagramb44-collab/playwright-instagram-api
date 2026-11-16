@@ -13,6 +13,7 @@ function makeFakeBrowser() {
     screenshot: async () => Buffer.from("jpeg-frame"),
     loginFormVisible: true,
     isClosed() { return this.closed; },
+    on() { return this; },
     locator: function () {
       const page = this;
       return {
