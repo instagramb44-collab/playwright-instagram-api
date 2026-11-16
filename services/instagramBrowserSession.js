@@ -284,8 +284,11 @@ async function closeSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return;
   sessions.delete(sessionId);
-  await session.browser.close();
-  if (session.releaseSlot) session.releaseSlot();
+  try {
+    await session.browser.close();
+  } finally {
+    if (session.releaseSlot) session.releaseSlot();
+  }
 }
 
 async function closeOwnedSession(sessionId, userId) {
