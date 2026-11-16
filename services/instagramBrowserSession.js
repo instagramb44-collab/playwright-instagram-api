@@ -111,6 +111,22 @@ async function startLoginSession(userId) {
       timeout: 45000
     });
 
+    // Do not report a successful session until the actual login form is visible.
+    // This prevents the frontend from polling and displaying a blank browser frame.
+    try {
+      await page.locator('input[name="username"]').waitFor({
+        state: "visible",
+        timeout: 15000
+      });
+    } catch {
+      const error = new Error(
+        "Instagram's login form did not load. Please try again in a moment."
+      );
+      error.status = 502;
+      error.code = "INSTAGRAM_LOGIN_PAGE_NOT_READY";
+      throw error;
+    }
+
     sessions.set(sessionId, {
       userId,
       browser,
