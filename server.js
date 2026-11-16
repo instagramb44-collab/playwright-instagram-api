@@ -1,11 +1,14 @@
 const express = require("express");
 const { randomUUID } = require("crypto");
+const { processJob } = require("./worker/processor");
+const { getCreator } = require("./worker/provider");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: "1mb" }));
 
+// Completed jobs only. In-progress job state is never exposed through the API.
 const jobs = new Map();
 
 function validateReelUrl(input) {
@@ -29,6 +32,22 @@ function validateReelUrl(input) {
   }
 }
 
+// Convert internal job state into a final-result-only API response.
+// Internal statuses, counters, timestamps, and processing details stay private.
+function toPublicJob(job) {
+  return {
+    jobId: job.id,
+    total: job.results.length,
+    results: job.results.map((item) => ({
+      id: item.id,
+      reelUrl: item.reelUrl,
+      username: item.username,
+      profileName: item.profileName,
+      ...(item.errorMessage ? { error: item.errorMessage } : {})
+    }))
+  };
+}
+
 app.get("/health", (req, res) => {
   res.json({
     status: "online",
@@ -36,7 +55,9 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.post("/api/jobs", (req, res) => {
+// Keep this request open until processing finishes. No queued/processing
+// response or progress endpoint is sent to the frontend.
+app.post("/api/jobs", async (req, res) => {
   const { urls } = req.body || {};
 
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -59,15 +80,14 @@ app.post("/api/jobs", (req, res) => {
       reelUrl: parsed ? parsed.normalizedUrl : String(input),
       shortcode: parsed?.shortcode || null,
       username: null,
+      profileName: null,
       status: parsed ? "Queued" : "Failed",
       errorMessage: parsed ? null : "Invalid Instagram Reel URL"
     };
   });
 
-  const jobId = randomUUID();
-
   const job = {
-    id: jobId,
+    id: randomUUID(),
     totalUrls: results.length,
     completed: 0,
     pending: results.filter(item => item.status === "Queued").length,
@@ -77,37 +97,37 @@ app.post("/api/jobs", (req, res) => {
     results
   };
 
-  jobs.set(jobId, job);
-
-  res.status(201).json({
-    message: "Import job created successfully.",
-    job
-  });
+  try {
+    const completedJob = await processJob(job, { getCreator });
+    jobs.set(completedJob.id, completedJob);
+    return res.status(200).json(toPublicJob(completedJob));
+  } catch (error) {
+    console.error("Creator lookup job failed:", error);
+    return res.status(500).json({
+      error: "Creator lookup failed. Please try again."
+    });
+  }
 });
 
+// This endpoint returns completed results only, never live job state.
 app.get("/api/jobs/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
 
   if (!job) {
-    return res.status(404).json({ error: "Job not found." });
+    return res.status(404).json({ error: "Completed job not found." });
   }
 
-  const { results, ...jobDetails } = job;
-  res.json(jobDetails);
+  res.json(toPublicJob(job));
 });
 
 app.get("/api/jobs/:jobId/results", (req, res) => {
   const job = jobs.get(req.params.jobId);
 
   if (!job) {
-    return res.status(404).json({ error: "Job not found." });
+    return res.status(404).json({ error: "Completed job not found." });
   }
 
-  res.json({
-    jobId: job.id,
-    total: job.results.length,
-    results: job.results
-  });
+  res.json(toPublicJob(job));
 });
 
 app.listen(PORT, "0.0.0.0", () => {
