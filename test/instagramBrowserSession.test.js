@@ -35,9 +35,19 @@ function makeFakeBrowser() {
   return { browser, page, context };
 }
 
-let fake;
+const activeFakes = [];
 Module._load = function (request, parent, isMain) {
-  if (request === "playwright") return { chromium: { launch: async () => { fake = makeFakeBrowser(); return fake.browser; } } };
+  if (request === "playwright") {
+    return {
+      chromium: {
+        launch: async () => {
+          const fake = makeFakeBrowser();
+          activeFakes.push(fake);
+          return fake.browser;
+        }
+      }
+    };
+  }
   if (request === "./instagramConnectionStore" &&
       parent?.filename?.endsWith("instagramBrowserSession.js")) {
     return {
@@ -53,7 +63,7 @@ test("starts a headless browser at Instagram login", async () => {
   const result = await sessions.startLoginSession("user-1");
   assert.ok(result.sessionId);
   assert.equal(result.expiresInSeconds, 600);
-  assert.equal(fake.page.navigatedTo, "https://www.instagram.com/accounts/login/");
+  assert.equal(activeFakes.at(-1).page.navigatedTo, "https://www.instagram.com/accounts/login/");
   await sessions.closeOwnedSession(result.sessionId, "user-1");
 });
 
@@ -68,6 +78,29 @@ test("browser frames and inputs are restricted to the owning user", async () => 
     /outside the browser viewport/
   );
   await sessions.closeOwnedSession(sessionId, "owner");
+});
+
+test("allows two different users to hold separate sessions at the same time", async () => {
+  const first = await sessions.startLoginSession("multi-user-1");
+  const second = await sessions.startLoginSession("multi-user-2");
+  assert.notEqual(first.sessionId, second.sessionId);
+  assert.equal(await sessions.getFrame(first.sessionId, "multi-user-1") instanceof Buffer, true);
+  assert.equal(await sessions.getFrame(second.sessionId, "multi-user-2") instanceof Buffer, true);
+  await sessions.closeOwnedSession(first.sessionId, "multi-user-1");
+  await sessions.closeOwnedSession(second.sessionId, "multi-user-2");
+});
+
+test("enforces a safe global browser limit and does not evict another user", async () => {
+  const first = await sessions.startLoginSession("capacity-user-1");
+  const second = await sessions.startLoginSession("capacity-user-2");
+  await assert.rejects(
+    sessions.startLoginSession("capacity-user-3"),
+    error => error.status === 429 && error.code === "INSTAGRAM_BROWSER_CAPACITY"
+  );
+  assert.equal(await sessions.getFrame(first.sessionId, "capacity-user-1") instanceof Buffer, true);
+  assert.equal(await sessions.getFrame(second.sessionId, "capacity-user-2") instanceof Buffer, true);
+  await sessions.closeOwnedSession(first.sessionId, "capacity-user-1");
+  await sessions.closeOwnedSession(second.sessionId, "capacity-user-2");
 });
 
 test("only saves storage state when an Instagram session cookie exists", async () => {

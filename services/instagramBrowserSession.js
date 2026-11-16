@@ -4,8 +4,26 @@ const { saveStorageState } = require("./instagramConnectionStore");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const VIEWPORT = { width: 1280, height: 800 };
-const MAX_ACTIVE_SESSIONS = 1;
+
+// Each user gets one interactive login session. Keep a small process-wide
+// ceiling because Chromium is memory-intensive on the Render Free instance.
+const DEFAULT_MAX_ACTIVE_SESSIONS = 2;
+const configuredMax = Number.parseInt(process.env.MAX_ACTIVE_INSTAGRAM_SESSIONS || "", 10);
+const MAX_ACTIVE_SESSIONS =
+  Number.isInteger(configuredMax) && configuredMax >= 2 && configuredMax <= 4
+    ? configuredMax
+    : DEFAULT_MAX_ACTIVE_SESSIONS;
+
 const sessions = new Map();
+const pendingStarts = new Map();
+let startLock = Promise.resolve();
+
+function withStartLock(operation) {
+  const previous = startLock;
+  let release;
+  startLock = new Promise(resolve => { release = resolve; });
+  return previous.then(operation).finally(release);
+}
 
 const expirySweep = setInterval(() => {
   const now = Date.now();
@@ -28,23 +46,45 @@ function getOwnedSession(sessionId, userId) {
 }
 
 async function startLoginSession(userId) {
-  // A user may have only one active interactive login session at a time.
-  for (const [id, session] of sessions) {
-    if (session.userId === userId) await closeSession(id);
-  }
-
-  if (sessions.size >= MAX_ACTIVE_SESSIONS) {
-    const error = new Error("All interactive browser slots are currently in use. Please try again shortly.");
-    error.status = 429;
+  if (!userId) {
+    const error = new Error("A verified user is required to start an Instagram login session.");
+    error.status = 401;
     throw error;
   }
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"]
+  const reservation = Symbol("instagram-session-start");
+  await withStartLock(async () => {
+    // A user may replace their own existing interactive login session.
+    for (const [id, session] of sessions) {
+      if (session.userId === userId) await closeSession(id);
+    }
+
+    if (pendingStarts.has(userId)) {
+      const error = new Error("An Instagram login session is already starting for this account.");
+      error.status = 409;
+      throw error;
+    }
+
+    if (sessions.size + pendingStarts.size >= MAX_ACTIVE_SESSIONS) {
+      const error = new Error("All interactive browser slots are currently in use. Please try again shortly.");
+      error.status = 429;
+      error.code = "INSTAGRAM_BROWSER_CAPACITY";
+      error.retryAfterSeconds = 30;
+      throw error;
+    }
+
+    // Reserve capacity before launching Chromium so simultaneous requests
+    // cannot race past the process-wide limit.
+    pendingStarts.set(userId, reservation);
   });
 
+  let browser;
   try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-dev-shm-usage"]
+    });
+
     const context = await browser.newContext({
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
@@ -81,8 +121,12 @@ async function startLoginSession(userId) {
 
     return { sessionId, expiresInSeconds: SESSION_TTL_MS / 1000 };
   } catch (error) {
-    await browser.close();
+    if (browser) await browser.close().catch(() => {});
     throw error;
+  } finally {
+    await withStartLock(async () => {
+      if (pendingStarts.get(userId) === reservation) pendingStarts.delete(userId);
+    });
   }
 }
 

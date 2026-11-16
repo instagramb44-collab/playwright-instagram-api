@@ -6,7 +6,7 @@ on:
       - feature/supabase-instagram-sessions
   push:
     branches:
-      - feature/embedded-instagram-login
+      - feature/supabase-instagram-sessions
 
 jobs:
   test:
