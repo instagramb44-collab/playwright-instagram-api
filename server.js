@@ -5,6 +5,7 @@ const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
 const { lookupReelCreator } = require("./services/instagramReelLookup");
 const { loadStorageState } = require("./services/instagramConnectionStore");
+const reelDataStore = require("./services/reelDataStore");
 const { createLookupSession, getOwnedSession, closeLookupSession, attachReelLookupWebSocket } = require("./services/instagramReelLookupSession");
 const {
   startLoginSession,
@@ -195,11 +196,9 @@ app.post("/api/instagram/reel/profile", requireSupabaseUser, async (req, res, ne
   }
 });
 
-// Find Creator runs each lookup synchronously and returns final results only.
-// Lookups are sequential because the Render service has one shared Chromium slot.
-app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
-  const { urls } = req.body || {};
-
+// Import Reel URLs, persist each item/result, and return the same response shape used by Find Creator.
+app.post("/api/jobs", requireSupabaseUser, async (req, res, next) => {
+  const { urls, sourceType, sourceLabel } = req.body || {};
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: "Please provide an array of Reel URLs." });
   }
@@ -207,62 +206,81 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
     return res.status(400).json({ error: "Maximum 100 Reel URLs allowed per batch." });
   }
 
+  let jobId;
   const results = [];
-  for (const input of urls) {
-    const id = randomUUID();
-    const parsed = typeof input === "string" ? validateReelUrl(input) : null;
-    const reelUrl = parsed ? parsed.normalizedUrl : String(input);
+  let completed = 0;
+  let failed = 0;
+  try {
+    jobId = await reelDataStore.createJob(req.user, urls, {
+      sourceType: sourceType === "CSV Upload" ? "CSV Upload" : "Manual Paste",
+      sourceLabel: typeof sourceLabel === "string" ? sourceLabel.slice(0, 200) : "Reel URL import"
+    });
 
-    if (!parsed) {
-      results.push({
-        id,
-        reelUrl,
-        creator: null,
-        username: null,
-        profileName: null,
-        profileUrl: null,
-        error: "Unable to find creator. Please try again."
-      });
-      continue;
+    for (const input of urls) {
+      const originalUrl = typeof input === "string" ? input : "";
+      const parsed = validateReelUrl(originalUrl);
+      const normalizedUrl = parsed?.normalizedUrl || originalUrl.slice(0, 2048);
+      const itemId = await reelDataStore.createItem(jobId, req.user.id, originalUrl.slice(0, 2048), normalizedUrl);
+
+      if (!parsed) {
+        failed++;
+        await reelDataStore.finishItem(itemId, req.user.id, "failed", "Invalid Instagram Reel URL.");
+        results.push({
+          id: itemId, reelUrl: originalUrl, creator: null,
+          username: null, profileName: null, profileUrl: null,
+          error: "Unable to find creator. Please try again."
+        });
+        continue;
+      }
+
+      try {
+        const creator = await lookupReelCreator(req.user.id, parsed.normalizedUrl);
+        const safeCreator = {
+          username: creator.username,
+          profileName: creator.profileName || null,
+          profileUrl: creator.profileUrl || `https://www.instagram.com/${creator.username}/`
+        };
+        await reelDataStore.saveResult(itemId, req.user.id, parsed.normalizedUrl, parsed.shortcode, safeCreator);
+        await reelDataStore.finishItem(itemId, req.user.id, "completed");
+        completed++;
+        results.push({ id: itemId, reelUrl: parsed.normalizedUrl, creator: safeCreator, ...safeCreator });
+      } catch (error) {
+        failed++;
+        await reelDataStore.finishItem(itemId, req.user.id, "failed", error.code || "CREATOR_LOOKUP_FAILED");
+        console.warn("[Find Creator] lookup failed", {
+          userId: req.user.id,
+          shortcode: parsed.shortcode,
+          status: Number.isInteger(error.status) ? error.status : 502,
+          code: error.code || "CREATOR_LOOKUP_FAILED"
+        });
+        results.push({
+          id: itemId, reelUrl: parsed.normalizedUrl, creator: null,
+          username: null, profileName: null, profileUrl: null,
+          error: "Unable to find creator. Please try again."
+        });
+      }
     }
 
-    try {
-      const creator = await lookupReelCreator(req.user.id, parsed.normalizedUrl);
-      const safeCreator = {
-        username: creator.username,
-        profileName: creator.profileName || null,
-        profileUrl: creator.profileUrl || `https://www.instagram.com/${creator.username}/`
-      };
-      results.push({
-        id,
-        reelUrl,
-        creator: safeCreator,
-        ...safeCreator
-      });
-    } catch (error) {
-      console.warn("[Find Creator] lookup failed", {
-        userId: req.user.id,
-        shortcode: parsed.shortcode,
-        status: Number.isInteger(error.status) ? error.status : 502,
-        code: error.code || "CREATOR_LOOKUP_FAILED"
-      });
-      results.push({
-        id,
-        reelUrl,
-        creator: null,
-        username: null,
-        profileName: null,
-        profileUrl: null,
-        error: "Unable to find creator. Please try again."
-      });
+    await reelDataStore.finishJob(jobId, req.user.id, urls.length, completed, failed);
+    return res.status(200).json({ jobId, total: results.length, results });
+  } catch (error) {
+    if (jobId) {
+      try {
+        await reelDataStore.finishJob(jobId, req.user.id, urls.length, completed, Math.max(failed, urls.length - completed));
+      } catch {}
     }
+    return next(error);
   }
+});
 
-  return res.status(200).json({
-    jobId: randomUUID(),
-    total: results.length,
-    results
-  });
+// All workspace rows are scoped to the verified session user in the persistence service.
+app.get("/api/workspace", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const workspace = await reelDataStore.listWorkspace(req.user.id);
+    return res.json(workspace);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.get("/api/jobs/:jobId", requireSupabaseUser, (req, res) => {
