@@ -90,6 +90,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
     session.socket = socket;
     let authenticated = false;
     let finished = false;
+    let stage = "websocket_connected";
     const finish = async (code, reason) => {
       if (finished) return;
       finished = true;
@@ -116,7 +117,9 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
       session.consumed = true;
       session.tokenHash = null;
       try {
+        stage = "acquiring_browser_slot";
         session.releaseSlot = acquireBrowserSlot("reel-lookup");
+        stage = "loading_saved_instagram_session";
         const storageState = await loadStorageState(session.userId);
         if (session.closed) return;
         if (!storageState) {
@@ -124,9 +127,11 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
           return finish(4409, "Instagram not connected");
         }
         sendJson(socket, { type: "status", step: "starting_browser", message: "Starting secure Instagram browser..." });
+        stage = "launching_chromium";
         const launchedBrowser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
         if (session.closed) { await launchedBrowser.close().catch(() => {}); return; }
         session.browser = launchedBrowser;
+        stage = "creating_browser_context";
         const context = await session.browser.newContext({ storageState, viewport: { width: 1280, height: 800 }, locale: "en-US" });
         await context.route("**/*", route => {
           if (route.request().isNavigationRequest() && route.request().frame().parentFrame() === null) {
@@ -138,7 +143,21 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
         });
         const page = await context.newPage();
         if (session.closed) return;
+        page.on("response", response => {
+          const request = response.request();
+          if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+            let hostname = "unknown";
+            try { hostname = new URL(response.url()).hostname; } catch {}
+            console.info("[Reel lookup] navigation response", { hostname, status: response.status() });
+          }
+        });
+        page.on("requestfailed", request => {
+          let hostname = "unknown";
+          try { hostname = new URL(request.url()).hostname; } catch {}
+          console.warn("[Reel lookup] browser request failed", { hostname, resourceType: request.resourceType(), failure: request.failure()?.errorText || "unknown" });
+        });
         sendJson(socket, { type: "status", step: "loading_session", message: "Loading your saved Instagram connection..." });
+        stage = "starting_browser_screencast";
         const cdp = await context.newCDPSession(page);
         await cdp.send("Page.enable");
         await cdp.send("Page.startScreencast", { format: "jpeg", quality: 55, maxWidth: 1100, maxHeight: 720, everyNthFrame: 2 });
@@ -149,6 +168,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
           } catch {}
         });
         sendJson(socket, { type: "status", step: "navigating", message: "Opening the Instagram Reel..." });
+        stage = "navigating_to_reel";
         const response = await page.goto(session.reelUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
         if (response?.status() === 429) {
           const error = new Error("Instagram is temporarily rate-limiting this request."); error.status = 429; throw error;
@@ -159,15 +179,24 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
           const error = new Error("Your Instagram connection needs attention. Reconnect and try again."); error.status = 409; throw error;
         }
         sendJson(socket, { type: "status", step: "extracting", message: "Finding the Reel creator..." });
+        stage = "extracting_creator";
         let creator = null;
         for (let attempt = 0; attempt < 8 && !creator; attempt++) {
           creator = await extractCreator(page).catch(() => null);
           if (!creator) await page.waitForTimeout(700);
         }
         if (!creator) { const error = new Error("Instagram did not provide creator details for this Reel."); error.status = 422; throw error; }
+        stage = "sending_result";
         sendJson(socket, { type: "result", reelUrl: session.reelUrl, shortcode: session.shortcode, creator });
         await finish(1000, "Lookup completed");
       } catch (error) {
+        console.error("[Reel lookup] live session failed", {
+          stage,
+          errorName: error?.name || "Error",
+          errorMessage: String(error?.message || "Unknown error").slice(0, 300),
+          status: Number.isInteger(error?.status) ? error.status : 502,
+          code: error?.code || null
+        });
         sendJson(socket, { type: "error", status: error.status || 502, message: error.status ? error.message : "Unable to complete the Instagram Reel lookup." });
         await finish(1011, "Lookup failed");
       }
