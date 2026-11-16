@@ -16,6 +16,7 @@ function makeFakeBrowser() {
     locator: function () {
       const page = this;
       return {
+        isVisible: async () => page.loginFormVisible,
         waitFor: async () => {
           if (!page.loginFormVisible) throw new Error("login form timeout");
         }
@@ -78,16 +79,17 @@ test("starts a headless browser at Instagram login", async () => {
   await sessions.closeOwnedSession(result.sessionId, "user-1");
 });
 
-test("does not create a session when the Instagram login form is missing", async () => {
+test("keeps a diagnostic session when the Instagram login form is missing", async () => {
   const fake = makeFakeBrowser();
   fake.page.loginFormVisible = false;
   activeFakes.push(fake);
   // Override the shared mocked launcher used by the already-imported service.
   launchOverride = async () => fake.browser;
-  await assert.rejects(
-    sessions.startLoginSession("blank-page-user"),
-    error => error.status === 502 && error.code === "INSTAGRAM_LOGIN_PAGE_NOT_READY"
-  );
+  const result = await sessions.startLoginSession("blank-page-user");
+  assert.ok(result.sessionId);
+  assert.equal(result.loginPageReady, false);
+  assert.equal(fake.page.closed, false);
+  await sessions.closeOwnedSession(result.sessionId, "blank-page-user");
   assert.equal(fake.page.closed, true);
   launchOverride = null;
 });
