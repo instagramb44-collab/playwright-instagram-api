@@ -283,21 +283,25 @@ app.get("/api/workspace", requireSupabaseUser, async (req, res, next) => {
   }
 });
 
-app.get("/api/jobs/:jobId", requireSupabaseUser, (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job || job.userId !== req.user.id) {
-    return res.status(404).json({ error: "Job not found." });
+app.get("/api/jobs/:jobId", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const job = await reelDataStore.getJob(req.params.jobId, req.user.id);
+    if (!job) return res.status(404).json({ error: "Job not found." });
+    return res.json(job);
+  } catch (error) {
+    return next(error);
   }
-  const { results, userId, ...jobDetails } = job;
-  res.json(jobDetails);
 });
 
-app.get("/api/jobs/:jobId/results", requireSupabaseUser, (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job || job.userId !== req.user.id) {
-    return res.status(404).json({ error: "Job not found." });
+app.get("/api/jobs/:jobId/results", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const job = await reelDataStore.getJob(req.params.jobId, req.user.id);
+    if (!job) return res.status(404).json({ error: "Job not found." });
+    const results = await reelDataStore.getJobResults(req.params.jobId, req.user.id);
+    return res.json({ jobId: job.id, total: results.length, results });
+  } catch (error) {
+    return next(error);
   }
-  res.json({ jobId: job.id, total: job.results.length, results: job.results });
 });
 
 app.use((error, req, res, next) => {
