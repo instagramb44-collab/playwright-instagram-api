@@ -1,8 +1,11 @@
 const express = require("express");
+const http = require("node:http");
 const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
 const { lookupReelCreator } = require("./services/instagramReelLookup");
+const { loadStorageState } = require("./services/instagramConnectionStore");
+const { createLookupSession, getOwnedSession, closeLookupSession, attachReelLookupWebSocket } = require("./services/instagramReelLookupSession");
 const {
   startLoginSession,
   getFrame,
@@ -146,6 +149,28 @@ app.delete("/api/instagram/connection", requireSupabaseUser, async (req, res, ne
   }
 });
 
+// Start a short-lived live browser session for a Reel creator lookup.
+app.post("/api/instagram/reel/lookup/session", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const input = req.body?.url;
+    const parsed = typeof input === "string" ? validateReelUrl(input) : null;
+    if (!parsed) return res.status(400).json({ error: "Please provide a valid Instagram Reel URL.", code: "INVALID_REEL_URL" });
+    const storageState = await loadStorageState(req.user.id);
+    if (!storageState) return res.status(409).json({ error: "Connect your Instagram account before looking up Reel creators.", code: "INSTAGRAM_NOT_CONNECTED" });
+    const session = createLookupSession(req.user.id, parsed.normalizedUrl, parsed.shortcode);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(201).json(session);
+  } catch (error) { return next(error); }
+});
+
+app.delete("/api/instagram/reel/lookup/session/:sessionId", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const session = getOwnedSession(req.params.sessionId, req.user.id);
+    if (!session) return res.status(204).end();
+    await closeLookupSession(session.sessionId);
+    return res.status(204).end();
+  } catch (error) { return next(error); }
+});
 // Look up the creator of one Reel using the signed-in user's saved Instagram session.
 app.post("/api/instagram/reel/profile", requireSupabaseUser, async (req, res, next) => {
   try {
@@ -234,6 +259,8 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = http.createServer(app);
+attachReelLookupWebSocket(server, ALLOWED_ORIGINS);
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`ReelData API running on port ${PORT}`);
 });
