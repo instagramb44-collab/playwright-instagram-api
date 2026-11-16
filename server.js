@@ -21,6 +21,7 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGINS = new Set([
   "https://reeldata-platform65.vercel.app",
+  "https://reeldata-platform6544.vercel.app",
   "https://reeldata-platform-9ug5.vercel.app",
   "http://localhost:5173"
 ]);
