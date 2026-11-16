@@ -1,8 +1,8 @@
 function config() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
+  const url = process.env.APP_SUPABASE_URL;
+  const key = process.env.APP_SUPABASE_SECRET_KEY;
   if (!url || !key) {
-    throw new Error("Supabase backend configuration is missing.");
+    throw new Error("Application Supabase backend configuration is missing.");
   }
   return { url: url.replace(/\/$/, ""), key };
 }
@@ -13,7 +13,6 @@ async function request(path, options = {}) {
     ...options,
     headers: {
       apikey: key,
-      Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
       ...(options.headers || {})
     },
@@ -30,9 +29,7 @@ async function request(path, options = {}) {
 }
 
 async function saveCreatorLookupHistory(userId, batchId, results) {
-  if (!userId || !batchId || !Array.isArray(results) || results.length === 0) {
-    return;
-  }
+  if (!userId || !batchId || !Array.isArray(results) || results.length === 0) return;
 
   const rows = results.map((item) => ({
     user_id: userId,
@@ -53,17 +50,13 @@ async function saveCreatorLookupHistory(userId, batchId, results) {
 }
 
 async function getCreatorLookupHistory(userId, limit = 100) {
-  if (!userId) {
-    throw new Error("A verified user ID is required to load Creator Lookup history.");
-  }
-
+  if (!userId) throw new Error("A verified user ID is required to load Creator Lookup history.");
   const params = new URLSearchParams({
     select: "id,batch_id,reel_url,shortcode,creator_username,profile_name,profile_url,error,created_at",
     user_id: `eq.${userId}`,
     order: "created_at.desc",
     limit: String(Math.max(1, Math.min(Number(limit) || 100, 200)))
   });
-
   return request(`creator_lookup_history?${params.toString()}`);
 }
 
