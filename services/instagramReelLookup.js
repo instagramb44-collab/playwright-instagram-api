@@ -16,35 +16,42 @@ async function extractCreator(page) {
       typeof value === "string" &&
       /^[A-Za-z0-9._]{1,30}$/.test(value);
 
+    // Only accept usernames attached directly to an identified Reel media object.
+    // Avoid recursively treating arbitrary tagged users, commenters, or caption
+    // mentions as the creator of the Reel.
+    const usernameFromMedia = media => {
+      if (!media || typeof media !== "object") return null;
+      const owner = media.owner || media.user;
+      return owner && isUsername(owner.username) ? owner.username : null;
+    };
+
     const visited = new Set();
-    const findOwner = (value, depth = 0) => {
-      if (!value || typeof value !== "object" || depth > 18 || visited.has(value)) return null;
+    const findReelOwner = (value, parentKey = "", depth = 0) => {
+      if (!value || typeof value !== "object" || depth > 20 || visited.has(value)) return null;
       visited.add(value);
 
       if (Array.isArray(value)) {
         for (const item of value) {
-          const found = findOwner(item, depth + 1);
+          const found = findReelOwner(item, parentKey, depth + 1);
           if (found) return found;
         }
         return null;
       }
 
-      const mediaKeys = ["shortcode_media", "xdt_shortcode_media", "graphql"];
-      for (const key of mediaKeys) {
-        const media = value[key];
-        if (media && typeof media === "object") {
-          const owner = media.owner || media.user;
-          if (owner && isUsername(owner.username)) return owner.username;
-          const nested = findOwner(media, depth + 1);
-          if (nested) return nested;
-        }
-      }
-
       for (const [key, child] of Object.entries(value)) {
-        if ((key === "owner" || key === "user") &&
-            child && isUsername(child.username)) return child.username;
+        if (key === "shortcode_media" || key === "xdt_shortcode_media") {
+          const found = usernameFromMedia(child);
+          if (found) return found;
+        }
+
+        // Legacy GraphQL Reel payloads expose the Reel as graphql.media.
+        if (parentKey === "graphql" && key === "media") {
+          const found = usernameFromMedia(child);
+          if (found) return found;
+        }
+
         if (child && typeof child === "object") {
-          const found = findOwner(child, depth + 1);
+          const found = findReelOwner(child, key, depth + 1);
           if (found) return found;
         }
       }
@@ -60,14 +67,16 @@ async function extractCreator(page) {
       if (start < 0) continue;
       try { sources.push(JSON.parse(text.slice(start))); } catch {}
     }
+
     for (const source of sources) {
-      const found = findOwner(source);
+      const found = findReelOwner(source);
       if (found) return found;
     }
 
+    // Instagram's Reel-specific Open Graph description is a final fallback.
     const description = document.querySelector('meta[property="og:description"]')
       ?.getAttribute("content") || "";
-    const match = description.match(/\s-\s([A-Za-z0-9._]{1,30})\s+on\s/i);
+    const match = description.match(/\\s-\\s([A-Za-z0-9._]{1,30})\\s+on\\s/i);
     return match ? match[1] : null;
   });
 
