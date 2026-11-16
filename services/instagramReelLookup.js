@@ -158,4 +158,4 @@ async function lookupReelCreator(userId, reelUrl) {
   }
 }
 
-module.exports = { lookupReelCreator, extractUsernameFromDescription };
+module.exports = { lookupReelCreator, extractCreator, extractUsernameFromDescription };
