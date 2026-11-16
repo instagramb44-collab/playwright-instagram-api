@@ -4,6 +4,7 @@ const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
 const { lookupReelCreator } = require("./services/instagramReelLookup");
+const { saveCreatorLookupHistory, getCreatorLookupHistory } = require("./services/creatorLookupHistoryStore");
 const { loadStorageState } = require("./services/instagramConnectionStore");
 const { createLookupSession, getOwnedSession, closeLookupSession, attachReelLookupWebSocket } = require("./services/instagramReelLookupSession");
 const {
@@ -70,6 +71,21 @@ function validateReelUrl(input) {
 
 app.get("/health", (req, res) => {
   res.json({ status: "online", service: "ReelData API" });
+});
+
+// Read the signed-in user's own Find Reel Creator history.
+app.get("/api/creator-lookups/history", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 200)
+      : 100;
+    const items = await getCreatorLookupHistory(req.user.id, limit);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.json({ items, total: items.length });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Instagram connection status is scoped to the verified Supabase user.
@@ -218,6 +234,7 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
     uniqueInputs.push({ input, parsed });
   }
 
+  const batchId = randomUUID();
   const results = [];
   for (const { input, parsed } of uniqueInputs) {
     const id = randomUUID();
@@ -276,8 +293,12 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
     }
   }
 
+  // Persist every result (including per-URL failures) before returning success.
+  await saveCreatorLookupHistory(req.user.id, batchId, results);
+
   return res.status(200).json({
-    jobId: randomUUID(),
+    jobId: batchId,
+    batchId,
     total: results.length,
     results
   });
