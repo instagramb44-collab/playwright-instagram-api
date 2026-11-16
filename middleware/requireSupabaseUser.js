@@ -1,22 +1,20 @@
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
-
 async function requireSupabaseUser(req, res, next) {
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    return res.status(503).json({ error: "Authentication service is not configured." });
+  const supabaseUrl = process.env.APP_SUPABASE_URL;
+  const publishableKey = process.env.APP_SUPABASE_PUBLISHABLE_KEY;
+  if (!supabaseUrl || !publishableKey) {
+    return res.status(503).json({ error: "Application authentication service is not configured." });
   }
 
   const authorization = req.get("authorization") || "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
-
   if (!match) {
     return res.status(401).json({ error: "A valid Supabase access token is required." });
   }
 
   try {
-    const response = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/auth/v1/user`, {
+    const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/auth/v1/user`, {
       headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
+        apikey: publishableKey,
         Authorization: `Bearer ${match[1]}`
       },
       signal: AbortSignal.timeout(10000)
