@@ -117,12 +117,15 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
       try {
         session.releaseSlot = acquireBrowserSlot("reel-lookup");
         const storageState = await loadStorageState(session.userId);
+        if (session.closed) return;
         if (!storageState) {
           sendJson(socket, { type: "error", status: 409, message: "Connect your Instagram account before looking up Reel creators." });
           return finish(4409, "Instagram not connected");
         }
         sendJson(socket, { type: "status", step: "starting_browser", message: "Starting secure Instagram browser..." });
-        session.browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+        const launchedBrowser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+        if (session.closed) { await launchedBrowser.close().catch(() => {}); return; }
+        session.browser = launchedBrowser;
         const context = await session.browser.newContext({ storageState, viewport: { width: 1280, height: 800 }, locale: "en-US" });
         await context.route("**/*", route => {
           if (route.request().isNavigationRequest() && route.request().frame().parentFrame() === null) {
@@ -133,6 +136,7 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
           return route.continue();
         });
         const page = await context.newPage();
+        if (session.closed) return;
         sendJson(socket, { type: "status", step: "loading_session", message: "Loading your saved Instagram connection..." });
         const cdp = await context.newCDPSession(page);
         await cdp.send("Page.enable");
