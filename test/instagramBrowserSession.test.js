@@ -45,11 +45,13 @@ function makeFakeBrowser() {
 }
 
 const activeFakes = [];
+let launchOverride = null;
 Module._load = function (request, parent, isMain) {
   if (request === "playwright") {
     return {
       chromium: {
         launch: async () => {
+          if (launchOverride) return launchOverride();
           const fake = makeFakeBrowser();
           activeFakes.push(fake);
           return fake.browser;
@@ -80,16 +82,14 @@ test("does not create a session when the Instagram login form is missing", async
   const fake = makeFakeBrowser();
   fake.page.loginFormVisible = false;
   activeFakes.push(fake);
-  const originalLaunch = require("playwright").chromium.launch;
-  // The fake launch override is scoped to this test and restored immediately.
-  const playwright = require("playwright");
-  playwright.chromium.launch = async () => fake.browser;
+  // Override the shared mocked launcher used by the already-imported service.
+  launchOverride = async () => fake.browser;
   await assert.rejects(
     sessions.startLoginSession("blank-page-user"),
     error => error.status === 502 && error.code === "INSTAGRAM_LOGIN_PAGE_NOT_READY"
   );
   assert.equal(fake.page.closed, true);
-  playwright.chromium.launch = originalLaunch;
+  launchOverride = null;
 });
 
 test("browser frames and inputs are restricted to the owning user", async () => {
