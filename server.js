@@ -1,6 +1,5 @@
 const express = require("express");
 const http = require("node:http");
-const { randomUUID } = require("crypto");
 const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
 const { lookupReelCreator } = require("./services/instagramReelLookup");
@@ -46,7 +45,6 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "1mb" }));
 
-const jobs = new Map();
 
 function validateReelUrl(input) {
   try {
@@ -204,6 +202,18 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res, next) => {
   }
   if (urls.length > 100) {
     return res.status(400).json({ error: "Maximum 100 Reel URLs allowed per batch." });
+  }
+
+  const normalizedInputs = urls.map(input => {
+    const value = typeof input === "string" ? input.trim() : "";
+    const parsed = validateReelUrl(value);
+    return parsed?.normalizedUrl || value.slice(0, 2048);
+  });
+  if (new Set(normalizedInputs).size !== normalizedInputs.length) {
+    return res.status(400).json({
+      error: "This batch contains duplicate Reel URLs. Remove duplicates and try again.",
+      code: "DUPLICATE_REEL_URL"
+    });
   }
 
   let jobId;
