@@ -3,7 +3,7 @@ const DATA_KEY = process.env.DATA_SUPABASE_SERVICE_ROLE_KEY;
 
 function config() {
   if (!DATA_KEY) throw new Error("ReelData data storage is not configured.");
-  return { url: DATA_URL.replace(/\\/$/, ""), key: DATA_KEY };
+  return { url: DATA_URL.replace(/\/$/, ""), key: DATA_KEY };
 }
 
 async function request(path, options = {}) {
