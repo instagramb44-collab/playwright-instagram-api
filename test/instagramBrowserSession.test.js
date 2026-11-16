@@ -11,7 +11,16 @@ function makeFakeBrowser() {
     navigatedTo: null,
     closed: false,
     screenshot: async () => Buffer.from("jpeg-frame"),
+    loginFormVisible: true,
     isClosed() { return this.closed; },
+    locator: function () {
+      const page = this;
+      return {
+        waitFor: async () => {
+          if (!page.loginFormVisible) throw new Error("login form timeout");
+        }
+      };
+    },
     goto: async function (url) { this.navigatedTo = url; },
     mouse: {
       click: async () => {},
@@ -65,6 +74,22 @@ test("starts a headless browser at Instagram login", async () => {
   assert.equal(result.expiresInSeconds, 600);
   assert.equal(activeFakes.at(-1).page.navigatedTo, "https://www.instagram.com/accounts/login/");
   await sessions.closeOwnedSession(result.sessionId, "user-1");
+});
+
+test("does not create a session when the Instagram login form is missing", async () => {
+  const fake = makeFakeBrowser();
+  fake.page.loginFormVisible = false;
+  activeFakes.push(fake);
+  const originalLaunch = require("playwright").chromium.launch;
+  // The fake launch override is scoped to this test and restored immediately.
+  const playwright = require("playwright");
+  playwright.chromium.launch = async () => fake.browser;
+  await assert.rejects(
+    sessions.startLoginSession("blank-page-user"),
+    error => error.status === 502 && error.code === "INSTAGRAM_LOGIN_PAGE_NOT_READY"
+  );
+  assert.equal(fake.page.closed, true);
+  playwright.chromium.launch = originalLaunch;
 });
 
 test("browser frames and inputs are restricted to the owning user", async () => {
