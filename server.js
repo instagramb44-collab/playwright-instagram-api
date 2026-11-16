@@ -195,22 +195,32 @@ app.post("/api/instagram/reel/profile", requireSupabaseUser, async (req, res, ne
   }
 });
 
-// Find Creator runs each lookup synchronously and returns final results only.
-// Lookups are sequential because the Render service has one shared Chromium slot.
+// Find Creator processes unique Reel URLs sequentially because Render has one shared Chromium slot.
+// Each input receives its own result so invalid or unavailable Reels do not block the rest.
 app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
   const { urls } = req.body || {};
 
   if (!Array.isArray(urls) || urls.length === 0) {
-    return res.status(400).json({ error: "Please provide an array of Reel URLs." });
+    return res.status(400).json({ error: "Please provide an array of Reel URLs.", code: "INVALID_URL_BATCH" });
   }
   if (urls.length > 100) {
-    return res.status(400).json({ error: "Maximum 100 Reel URLs allowed per batch." });
+    return res.status(400).json({ error: "Maximum 100 Reel URLs allowed per batch.", code: "BATCH_LIMIT_EXCEEDED" });
+  }
+
+  // Normalize and deduplicate valid Reel URLs while retaining the first submitted value.
+  const uniqueInputs = [];
+  const seen = new Set();
+  for (const input of urls) {
+    const parsed = typeof input === "string" ? validateReelUrl(input) : null;
+    const key = parsed ? parsed.normalizedUrl : String(input).trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueInputs.push({ input, parsed });
   }
 
   const results = [];
-  for (const input of urls) {
+  for (const { input, parsed } of uniqueInputs) {
     const id = randomUUID();
-    const parsed = typeof input === "string" ? validateReelUrl(input) : null;
     const reelUrl = parsed ? parsed.normalizedUrl : String(input);
 
     if (!parsed) {
@@ -221,7 +231,8 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
         username: null,
         profileName: null,
         profileUrl: null,
-        error: "Unable to find creator. Please try again."
+        error: "Please provide a valid Instagram Reel URL.",
+        errorCode: "INVALID_REEL_URL"
       });
       continue;
     }
@@ -236,24 +247,31 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
       results.push({
         id,
         reelUrl,
+        shortcode: parsed.shortcode,
         creator: safeCreator,
-        ...safeCreator
+        ...safeCreator,
+        error: null,
+        errorCode: null
       });
     } catch (error) {
+      const errorCode = error.code || "CREATOR_LOOKUP_FAILED";
+      const message = error.message || "Unable to find creator. Please try again.";
       console.warn("[Find Creator] lookup failed", {
         userId: req.user.id,
         shortcode: parsed.shortcode,
         status: Number.isInteger(error.status) ? error.status : 502,
-        code: error.code || "CREATOR_LOOKUP_FAILED"
+        code: errorCode
       });
       results.push({
         id,
         reelUrl,
+        shortcode: parsed.shortcode,
         creator: null,
         username: null,
         profileName: null,
         profileUrl: null,
-        error: "Unable to find creator. Please try again."
+        error: message,
+        errorCode
       });
     }
   }
