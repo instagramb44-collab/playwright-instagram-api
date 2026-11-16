@@ -1,6 +1,5 @@
-
 async function processJob(job, provider) {
-  console.log(`Starting job: ${job.id}`);
+  console.log(`Starting creator lookup job: ${job.id}`);
 
   const results = [];
 
@@ -11,9 +10,8 @@ async function processJob(job, provider) {
     }
 
     try {
+      // Processing state is internal only and is never returned by the API.
       item.status = "Processing";
-
-      // Provider retrieves data through an authorized source.
       const creator = await provider.getCreator(item.reelUrl);
 
       item.username = creator.username;
@@ -22,7 +20,11 @@ async function processJob(job, provider) {
       item.errorMessage = null;
     } catch (error) {
       item.status = "Failed";
-      item.errorMessage = error.message;
+      item.errorMessage = "Creator lookup is currently unavailable.";
+      console.error(
+        `Creator lookup failed for job ${job.id}, Reel ${item.shortcode || "unknown"}:`,
+        error.message
+      );
     }
 
     results.push(item);
