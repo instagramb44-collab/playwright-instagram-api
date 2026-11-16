@@ -1,6 +1,7 @@
 const { randomUUID } = require("node:crypto");
 const { chromium } = require("playwright");
 const { saveStorageState } = require("./instagramConnectionStore");
+const { acquireBrowserSlot } = require("./browserCapacity");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const VIEWPORT = { width: 1280, height: 800 };
@@ -79,7 +80,9 @@ async function startLoginSession(userId) {
   });
 
   let browser;
+  let releaseSlot;
   try {
+    releaseSlot = acquireBrowserSlot("instagram-login");
     browser = await chromium.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -173,7 +176,8 @@ async function startLoginSession(userId) {
       browser,
       context,
       page,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      releaseSlot
     });
 
     return {
@@ -183,6 +187,7 @@ async function startLoginSession(userId) {
     };
   } catch (error) {
     if (browser) await browser.close().catch(() => {});
+    if (releaseSlot) releaseSlot();
     throw error;
   } finally {
     await withStartLock(async () => {
@@ -279,7 +284,11 @@ async function closeSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return;
   sessions.delete(sessionId);
-  await session.browser.close();
+  try {
+    await session.browser.close();
+  } finally {
+    if (session.releaseSlot) session.releaseSlot();
+  }
 }
 
 async function closeOwnedSession(sessionId, userId) {

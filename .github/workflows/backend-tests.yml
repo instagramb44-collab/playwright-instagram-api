@@ -1,23 +1,27 @@
 name: Backend tests
 
 on:
-  pull_request:
-    branches:
-      - feature/supabase-instagram-sessions
   push:
+    branches:
+      - feature/reel-live-browser-streaming
+  pull_request:
     branches:
       - feature/supabase-instagram-sessions
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SKIP_PLAYWRIGHT_BROWSER_INSTALL: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-        env:
-          SKIP_PLAYWRIGHT_BROWSER_INSTALL: '1'
-      - run: npm test
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
