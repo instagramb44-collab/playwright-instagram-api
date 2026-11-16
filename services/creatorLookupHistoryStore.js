@@ -4,7 +4,7 @@ function config() {
   if (!url || !key) {
     throw new Error("Supabase backend configuration is missing.");
   }
-  return { url: url.replace(/\\/$/, ""), key };
+  return { url: url.replace(/\/$/, ""), key };
 }
 
 async function request(path, options = {}) {
