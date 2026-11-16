@@ -52,6 +52,17 @@ All endpoints require the caller's Supabase access token. Browser sessions are h
 
 **Security and operational limits:** This prototype does not collect Instagram passwords into ReelData storage, bypass CAPTCHA/2FA, or evade Instagram restrictions. Users enter credentials on Instagram itself. The session is in-memory, so a server restart or instance replacement interrupts login. Keep the API at one instance until browser sessions are moved to shared session infrastructure. The frontend browser panel is not included in this backend change. Instagram may change its login UI or block automated browsing; connection completion only confirms the presence of a session cookie, not that every Instagram feature will be accessible.
 
+## Reel creator lookup
+
+- `POST /api/instagram/reel/profile` — looks up the creator for one Reel URL.
+- Requires a valid Supabase bearer token and the signed-in user's connected Instagram account.
+- Request body: `{ "url": "https://www.instagram.com/reel/SHORTCODE/" }`.
+- Success response includes the normalized Reel URL, shortcode, creator username, and public profile URL.
+- The backend loads only that authenticated user's encrypted saved session. It does not accept a user ID from the request.
+- Instagram may rate-limit, challenge, or change its page markup. In those cases the API returns a safe error instead of inventing a username. This endpoint does not bypass CAPTCHA, 2FA, private-account restrictions, or Instagram rate limits.
+
+This endpoint performs one Reel lookup per request. It does not yet provide likes, comments, views, or batch scraping.
+
 ## Reel jobs
 
 - `POST /api/jobs`
