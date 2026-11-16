@@ -97,6 +97,11 @@ async function startLoginSession(userId) {
       if (request.isNavigationRequest() && request.frame().parentFrame() === null) {
         const hostname = new URL(request.url()).hostname.toLowerCase();
         if (hostname !== "instagram.com" && !hostname.endsWith(".instagram.com")) {
+          // Log only the hostname and resource type; never log full URLs or query strings.
+          console.warn("[Instagram browser] blocked top-level redirect", {
+            hostname,
+            resourceType: request.resourceType()
+          });
           return route.abort();
         }
       }
@@ -105,6 +110,33 @@ async function startLoginSession(userId) {
 
     const page = await context.newPage();
     const sessionId = randomUUID();
+    let mainDocumentStatus = null;
+
+    page.on("response", response => {
+      const request = response.request();
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        mainDocumentStatus = response.status();
+        let hostname = "unknown";
+        try { hostname = new URL(response.url()).hostname; } catch {}
+        console.info("[Instagram browser] main document response", {
+          hostname,
+          status: mainDocumentStatus
+        });
+      }
+    });
+    page.on("requestfailed", request => {
+      let hostname = "unknown";
+      try { hostname = new URL(request.url()).hostname; } catch {}
+      console.warn("[Instagram browser] request failed", {
+        hostname,
+        resourceType: request.resourceType()
+      });
+    });
+    page.on("pageerror", error => {
+      console.warn("[Instagram browser] page script error", {
+        name: error?.name || "Error"
+      });
+    });
 
     await page.goto("https://www.instagram.com/accounts/login/", {
       waitUntil: "domcontentloaded",
@@ -119,6 +151,15 @@ async function startLoginSession(userId) {
         timeout: 15000
       });
     } catch {
+      let finalHostname = "unknown";
+      let pageTitle = "unavailable";
+      try { finalHostname = new URL(page.url()).hostname; } catch {}
+      try { pageTitle = (await page.title()).slice(0, 100); } catch {}
+      console.error("[Instagram browser] login form readiness check failed", {
+        finalHostname,
+        pageTitle,
+        mainDocumentStatus
+      });
       const error = new Error(
         "Instagram's login form did not load. Please try again in a moment."
       );
