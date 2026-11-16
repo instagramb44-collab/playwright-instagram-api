@@ -10,7 +10,7 @@ Configure these only in the backend host (for example, Render):
 - `SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key used when validating a user's bearer token with Supabase Auth.
 - `SUPABASE_SECRET_KEY`: Supabase secret key used only by this backend for database operations. It bypasses RLS; never expose it in browser code or commit its value.
 - `INSTAGRAM_SESSION_ENCRYPTION_KEY`: base64-encoded 32-byte key used for AES-256-GCM encryption of Playwright storage state.
-- `MAX_ACTIVE_INSTAGRAM_SESSIONS` (optional): process-wide interactive browser capacity. Defaults to 2; accepted values are 2–4. Keep this low on small instances because each session launches Chromium.
+- `MAX_ACTIVE_BROWSER_INSTANCES` (optional): shared process-wide Chromium capacity across Instagram login, synchronous Reel lookup, and live Reel streaming. Defaults to 1; accepted values are 1–4. Keep this at 1 on Render Free because Chromium is memory-intensive.
 
 Generate an encryption key with:
 
@@ -62,6 +62,15 @@ All endpoints require the caller's Supabase access token. Browser sessions are h
 - Instagram may rate-limit, challenge, or change its page markup. In those cases the API returns a safe error instead of inventing a username. This endpoint does not bypass CAPTCHA, 2FA, private-account restrictions, or Instagram rate limits.
 
 This endpoint performs one Reel lookup per request. It does not yet provide likes, comments, views, or batch scraping.
+
+### Live Reel creator lookup (separate-tab viewer)
+
+- `POST /api/instagram/reel/lookup/session` — authenticated; accepts `{ "url": "https://www.instagram.com/reel/SHORTCODE/" }` and returns `{ sessionId, viewerToken, expiresInSeconds }`.
+- `wss://<api-host>/ws/instagram/reel/lookup/:sessionId` — the viewer must send its first text message as `{ "type": "auth", "viewerToken": "..." }`. The token is single-use, short-lived, stored only as a SHA-256 hash, and never belongs in a URL.
+- Backend emits `status`, JPEG `frame`, `result`, and `error` messages matching the frontend contract.
+- `DELETE /api/instagram/reel/lookup/session/:sessionId` — authenticated, owner-only cleanup.
+- Sessions are process-local and expire automatically. WebSocket Origin is checked against the same allowlist as the HTTP API. The viewer token is not a Supabase token; the saved encrypted Instagram storage state remains server-side.
+- Browser capacity is shared across login, synchronous lookup, and live lookup. A full slot returns HTTP 429 rather than starting another Chromium process.
 
 ## Reel jobs
 
