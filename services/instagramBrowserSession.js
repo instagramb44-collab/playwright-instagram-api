@@ -7,14 +7,9 @@ const { launchChromium, installBrowserResourcePolicy } = require("./chromiumBrow
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const VIEWPORT = { width: 1280, height: 800 };
 
-// Each user gets one interactive login session. Keep a small process-wide
-// ceiling because Chromium is memory-intensive on the Render Free instance.
-const DEFAULT_MAX_ACTIVE_SESSIONS = 2;
-const configuredMax = Number.parseInt(process.env.MAX_ACTIVE_INSTAGRAM_SESSIONS || "", 10);
-const MAX_ACTIVE_SESSIONS =
-  Number.isInteger(configuredMax) && configuredMax >= 2 && configuredMax <= 4
-    ? configuredMax
-    : DEFAULT_MAX_ACTIVE_SESSIONS;
+// Render Free has a single shared Chromium slot. Keep the login-session
+// reservation limit aligned with it so the API reports capacity consistently.
+const MAX_ACTIVE_SESSIONS = 1;
 
 const sessions = new Map();
 const pendingStarts = new Map();
