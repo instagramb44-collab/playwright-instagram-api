@@ -75,9 +75,10 @@ async function extractCreator(page) {
     }
 
     // Instagram's Reel-specific Open Graph description is a final fallback.
+    // Match the username separator as whitespace, not a literal "\\s" sequence.
     const description = document.querySelector('meta[property="og:description"]')
       ?.getAttribute("content") || "";
-    const match = description.match(/\\s-\\s([A-Za-z0-9._]{1,30})\\s+on\\s/i);
+    const match = description.match(/\s-\s([A-Za-z0-9._]{1,30})\s+on\s/i);
     return match ? match[1] : null;
   });
 
