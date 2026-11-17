@@ -4,6 +4,7 @@ const { WebSocketServer } = require("ws");
 const { loadStorageState } = require("./instagramConnectionStore");
 const { extractCreator } = require("./instagramReelLookup");
 const { acquireBrowserSlot } = require("./browserCapacity");
+const { launchChromium, installBrowserResourcePolicy } = require("./chromiumBrowser");
 
 const SESSION_TTL_MS = 90_000;
 const TOKEN_TTL_MS = 30_000;
@@ -128,23 +129,14 @@ function attachReelLookupWebSocket(server, allowedOrigins) {
         }
         sendJson(socket, { type: "status", step: "starting_browser", message: "Starting secure Instagram browser..." });
         stage = "launching_chromium";
-        const launchedBrowser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+        const launchedBrowser = await launchChromium(chromium);
         if (session.closed) { await launchedBrowser.close().catch(() => {}); return; }
         session.browser = launchedBrowser;
         stage = "creating_browser_context";
         const context = await session.browser.newContext({ storageState, viewport: { width: 1280, height: 800 }, locale: "en-US" });
-        await context.route("**/*", route => {
-          if (route.request().isNavigationRequest() && route.request().frame().parentFrame() === null) {
-            let host = "";
-            try { host = new URL(route.request().url()).hostname.toLowerCase(); } catch {}
-            if (host !== "instagram.com" && !host.endsWith(".instagram.com")) {
-              let pathname = "/";
-              try { pathname = new URL(route.request().url()).pathname; } catch {}
-              console.warn("[Reel lookup] blocked external top-level navigation", { hostname: host || "unknown", pathname });
-              return route.abort();
-            }
-          }
-          return route.continue();
+        await installBrowserResourcePolicy(context, {
+          allowTopLevelNavigation: url => url.hostname === "instagram.com" || url.hostname.endsWith(".instagram.com"),
+          logPrefix: "[Reel lookup]"
         });
         const page = await context.newPage();
         if (session.closed) return;

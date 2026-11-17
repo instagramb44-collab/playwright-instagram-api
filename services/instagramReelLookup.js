@@ -1,6 +1,7 @@
 const { chromium } = require("playwright");
 const { loadStorageState } = require("./instagramConnectionStore");
 const { acquireBrowserSlot } = require("./browserCapacity");
+const { launchChromium, installBrowserResourcePolicy } = require("./chromiumBrowser");
 
 const NAVIGATION_TIMEOUT_MS = 45000;
 
@@ -97,14 +98,15 @@ async function lookupReelCreator(userId, reelUrl) {
   let releaseSlot;
   try {
     releaseSlot = acquireBrowserSlot("synchronous-reel-lookup");
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-dev-shm-usage"]
-    });
+    browser = await launchChromium(chromium);
     const context = await browser.newContext({
       storageState,
       viewport: { width: 1280, height: 800 },
       locale: "en-US"
+    });
+    await installBrowserResourcePolicy(context, {
+      allowTopLevelNavigation: url => url.hostname === "instagram.com" || url.hostname === "www.instagram.com",
+      logPrefix: "[Reel lookup]"
     });
     const page = await context.newPage();
     const response = await page.goto(reelUrl, {

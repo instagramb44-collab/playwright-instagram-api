@@ -1,9 +1,6 @@
-const DEFAULT_MAX_ACTIVE_BROWSERS = 1;
-const configuredMax = Number.parseInt(process.env.MAX_ACTIVE_BROWSER_INSTANCES || "", 10);
-const MAX_ACTIVE_BROWSERS =
-  Number.isInteger(configuredMax) && configuredMax >= 1 && configuredMax <= 4
-    ? configuredMax
-    : DEFAULT_MAX_ACTIVE_BROWSERS;
+// Render Free currently runs one Chromium browser reliably. Keep this hard cap
+// centralized so an environment variable cannot accidentally overcommit RAM.
+const MAX_ACTIVE_BROWSERS = 1;
 
 const active = new Map();
 
