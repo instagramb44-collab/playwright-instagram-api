@@ -2,6 +2,7 @@ const { randomUUID } = require("node:crypto");
 const { chromium } = require("playwright");
 const { saveStorageState } = require("./instagramConnectionStore");
 const { acquireBrowserSlot } = require("./browserCapacity");
+const { launchChromium, installBrowserResourcePolicy } = require("./chromiumBrowser");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const VIEWPORT = { width: 1280, height: 800 };
@@ -83,32 +84,17 @@ async function startLoginSession(userId) {
   let releaseSlot;
   try {
     releaseSlot = acquireBrowserSlot("instagram-login");
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-dev-shm-usage"]
-    });
+    browser = await launchChromium(chromium);
 
     const context = await browser.newContext({
       viewport: VIEWPORT,
       deviceScaleFactor: 1,
       locale: "en-US"
     });
-    // Restrict top-level navigation to Instagram so this is not a general
-    // remote browser. Subresources remain available for the login page.
-    await context.route("**/*", async route => {
-      const request = route.request();
-      if (request.isNavigationRequest() && request.frame().parentFrame() === null) {
-        const hostname = new URL(request.url()).hostname.toLowerCase();
-        if (hostname !== "instagram.com" && !hostname.endsWith(".instagram.com")) {
-          // Log only the hostname and resource type; never log full URLs or query strings.
-          console.warn("[Instagram browser] blocked top-level redirect", {
-            hostname,
-            resourceType: request.resourceType()
-          });
-          return route.abort();
-        }
-      }
-      return route.continue();
+    // Keep the remote browser limited to Instagram and avoid video/audio buffers.
+    await installBrowserResourcePolicy(context, {
+      allowTopLevelNavigation: url => url.hostname === "instagram.com" || url.hostname.endsWith(".instagram.com"),
+      logPrefix: "[Instagram browser]"
     });
 
     const page = await context.newPage();
@@ -203,7 +189,15 @@ async function getFrame(sessionId, userId) {
     await closeSession(sessionId);
     return null;
   }
-  return session.page.screenshot({ type: "jpeg", quality: 65 });
+  try {
+    return await session.page.screenshot({ type: "jpeg", quality: 65 });
+  } catch (error) {
+    if (session.page.isClosed() || /target page, context or browser has been closed/i.test(error.message || "")) {
+      await closeSession(sessionId);
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function sendInput(sessionId, userId, input) {
