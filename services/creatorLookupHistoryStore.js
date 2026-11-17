@@ -24,8 +24,19 @@ async function request(path, options = {}) {
     console.error("Creator lookup history storage error:", response.status, detail);
     throw new Error("Unable to save or load Creator Lookup history.");
   }
+  // PostgREST may return an empty body for a successful minimal-return insert.
+  // The history row can already be committed even when there is no JSON to parse.
   if (response.status === 204) return null;
-  return response.json();
+
+  const responseBody = await response.text();
+  if (!responseBody.trim()) return null;
+
+  try {
+    return JSON.parse(responseBody);
+  } catch {
+    console.error("Creator lookup history storage returned invalid JSON.");
+    throw new Error("Creator lookup history storage returned an invalid response.");
+  }
 }
 
 async function saveCreatorLookupHistory(userId, batchId, results) {
