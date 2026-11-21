@@ -4,7 +4,7 @@ function config() {
   const url = process.env.SESSIONS_SUPABASE_URL;
   const key = process.env.SESSIONS_SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error("Sessions Supabase backend configuration is missing.");
-  return { url: url.replace(/\\/$/, ""), key };
+  return { url: url.replace(/\/$/, ""), key };
 }
 
 async function request(path, options = {}) {
