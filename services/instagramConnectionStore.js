@@ -2,7 +2,9 @@ const { encryptStorageState, decryptStorageState } = require("../lib/instagramSe
 
 function config() {
   const url = process.env.SESSIONS_SUPABASE_URL;
-  const key = process.env.SESSIONS_SUPABASE_SECRET_KEY;
+  // Preserve the currently deployed secret during the staged rollout. The old
+  // SUPABASE_SECRET_KEY remains Sessions-only; auth never reads it.
+  const key = process.env.SESSIONS_SUPABASE_SECRET_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error("Sessions Supabase backend configuration is missing.");
   return { url: url.replace(/\/$/, ""), key };
 }
