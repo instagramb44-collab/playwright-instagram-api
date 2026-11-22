@@ -8,7 +8,7 @@ function getConfig() {
     throw error;
   }
   return {
-    url: PLATFORM_SUPABASE_URL.replace(/\\/$/, ""),
+    url: PLATFORM_SUPABASE_URL.replace(/\/$/, ""),
     key: PLATFORM_SUPABASE_SECRET_KEY
   };
 }
