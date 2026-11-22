@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/reel-live-browser-streaming
+      - fix/platform-auth-sessions-ownership
   pull_request:
     branches:
       - feature/supabase-instagram-sessions
