@@ -35,8 +35,12 @@ async function platformRequest(path, options = {}) {
     error.status = 502;
     throw error;
   }
-  if (response.status === 204) return [];
-  return response.json();
+
+  // PostgREST may return 201 with an empty body for Prefer: return=minimal.
+  // Treat any successful empty response like 204 instead of parsing it as JSON.
+  const body = await response.text();
+  if (!body.trim()) return [];
+  return JSON.parse(body);
 }
 
 async function saveCreatorLookupHistory(userId, results, batchId) {
