@@ -26,6 +26,7 @@ Configure these only in the backend host (for example, Render). Never expose ser
 Platform authentication:
 - `PLATFORM_SUPABASE_URL`: Platform Supabase project URL.
 - `PLATFORM_SUPABASE_PUBLISHABLE_KEY`: Platform publishable key used to verify bearer tokens with `/auth/v1/user`.
+- `PLATFORM_SUPABASE_SECRET_KEY`: server-only Platform Supabase secret key used for creator lookup history persistence and retrieval. Never expose it to the frontend.
 
 Encrypted Instagram session storage:
 - `SESSIONS_SUPABASE_URL`: Sessions Supabase project URL.
@@ -85,6 +86,11 @@ This endpoint performs one Reel lookup per request. It does not yet provide like
 - `wss://<api-host>/ws/instagram/reel/lookup/:sessionId` — authenticate the first message with the single-use viewer token.
 - `DELETE /api/instagram/reel/lookup/session/:sessionId` — authenticated, owner-only cleanup.
 - Browser capacity is shared across login and Reel lookup; a full slot returns HTTP 429.
+
+## Creator lookup history
+- `POST /api/jobs` saves each successful or failed Reel creator lookup in Platform Supabase under the verified user UUID.
+- `GET /api/creator-lookups/history?limit=200` returns newest-first rows for that same authenticated user (maximum 200).
+- The history table remains server-only; do not add public or frontend RLS policies. The backend uses the Platform server secret and always filters by the verified `user_id`.
 
 ## Reel jobs
 - `POST /api/jobs`
