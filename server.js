@@ -26,9 +26,15 @@ const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173"
 ]);
 
+// Allow preview deployments belonging to this ReelData Vercel project only.
+// Vercel creates a new deployment hostname for each preview deployment.
+const isAllowedOrigin = (origin) =>
+  ALLOWED_ORIGINS.has(origin) ||
+  /^https:\/\/reeldata-platform-9ug5-[a-z0-9-]+-instagramb44-8528\.vercel\.app$/.test(origin);
+
 app.use((req, res, next) => {
   const origin = req.get("origin");
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -36,7 +42,7 @@ app.use((req, res, next) => {
   }
 
   if (req.method === "OPTIONS") {
-    if (origin && !ALLOWED_ORIGINS.has(origin)) {
+    if (origin && !isAllowedOrigin(origin)) {
       return res.sendStatus(403);
     }
     return res.sendStatus(204);
