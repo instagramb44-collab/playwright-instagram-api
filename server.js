@@ -5,6 +5,7 @@ const { requireSupabaseUser } = require("./middleware/requireSupabaseUser");
 const { getConnectionStatus, disconnect } = require("./services/instagramConnectionStore");
 const { lookupReelCreator } = require("./services/instagramReelLookup");
 const { loadStorageState } = require("./services/instagramConnectionStore");
+const { saveCreatorLookupHistory, fetchCreatorLookupHistory } = require("./services/creatorLookupHistoryStore");
 const { createLookupSession, getOwnedSession, closeLookupSession, attachReelLookupWebSocket } = require("./services/instagramReelLookupSession");
 const {
   startLoginSession,
@@ -196,6 +197,20 @@ app.post("/api/instagram/reel/profile", requireSupabaseUser, async (req, res, ne
   }
 });
 
+// History is server-only and scoped to the verified Platform Supabase user.
+app.get("/api/creator-lookups/history", requireSupabaseUser, async (req, res, next) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 200)
+      : 200;
+    const items = await fetchCreatorLookupHistory(req.user.id, limit);
+    return res.json({ items });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // Find Creator runs each lookup synchronously and returns final results only.
 // Lookups are sequential because the Render service has one shared Chromium slot.
 app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
@@ -259,8 +274,11 @@ app.post("/api/jobs", requireSupabaseUser, async (req, res) => {
     }
   }
 
+  const batchId = randomUUID();
+  await saveCreatorLookupHistory(req.user.id, results, batchId);
+
   return res.status(200).json({
-    jobId: randomUUID(),
+    jobId: batchId,
     total: results.length,
     results
   });
