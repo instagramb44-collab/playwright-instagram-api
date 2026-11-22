@@ -7,6 +7,7 @@ Set these variables in the backend host's server-side environment settings. Neve
 Platform authentication:
 - `PLATFORM_SUPABASE_URL`: the ReelData Platform Supabase project URL.
 - `PLATFORM_SUPABASE_PUBLISHABLE_KEY`: Platform Supabase publishable key used to validate bearer tokens with Auth.
+- `PLATFORM_SUPABASE_SECRET_KEY`: server-only Platform Supabase secret key used by the backend to read/write `creator_lookup_history`; never expose it to the frontend.
 
 Instagram session storage:
 - `SESSIONS_SUPABASE_URL`: the separate Sessions Supabase project URL.
@@ -25,10 +26,11 @@ Send `Authorization: Bearer <Platform Supabase access token>`.
 
 - `GET /api/instagram/connection` — returns the signed-in user's safe connection status.
 - `DELETE /api/instagram/connection` — deletes only that user's encrypted Instagram session row.
-- `POST /api/jobs` — creates an in-memory Reel import job.
+- `POST /api/jobs` — performs creator lookups and saves each result to Platform `creator_lookup_history`.
+- `GET /api/creator-lookups/history?limit=200` — returns only the verified user's saved lookup history (maximum 200 rows).
 - `GET /api/jobs/:jobId` and `GET /api/jobs/:jobId/results` — only the job owner can read it.
 
-Job records remain in process memory and are not yet suitable for multi-instance production deployment.
+The lookup job response is synchronous. Creator lookup history is stored in Platform Supabase; direct client access remains blocked by RLS.
 
 ## Instagram session safety
 
